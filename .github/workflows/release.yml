@@ -10,7 +10,56 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
+  build-windows-exe:
+    name: Build Standalone Windows EXE
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Frontend Assets
+        working-directory: ./frontend
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Install Backend & PyInstaller
+        run: |
+          pip install -r backend/requirements.txt
+          pip install pyinstaller
+
+      - name: Run Pytest Tests
+        run: |
+          pytest backend/tests
+
+      - name: Build LANBridge.exe
+        run: |
+          pyinstaller lanbridge.spec --clean --noconfirm
+          Copy-Item dist\LANBridge.exe LANBridge-windows-x64.exe
+
+      - name: Upload Windows EXE to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: LANBridge-windows-x64.exe
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+
+  build-portable-zip:
+    name: Build Portable Cross-Platform Zip
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -57,7 +106,7 @@ jobs:
           zip -r ../lanbridge-portable.zip lanbridge
           cd ..
 
-      - name: Create GitHub Release
+      - name: Upload Portable Zip to Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:

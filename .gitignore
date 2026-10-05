@@ -16,6 +16,11 @@ dist-ssr/
 *.local
 .npm
 
+# PyInstaller / Binaries
+/dist/
+/build/
+*.exe
+
 # LANBridge Data & Storage
 *.db
 *.sqlite3

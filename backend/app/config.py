@@ -1,8 +1,18 @@
+import sys
 from pathlib import Path
 import os
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-BACKEND_DIR = Path(__file__).resolve().parent.parent
+if getattr(sys, "frozen", False):
+    # PyInstaller extracts bundled assets to sys._MEIPASS
+    BUNDLE_DIR = Path(sys._MEIPASS)
+    # Write persistent files next to the running executable
+    APP_DIR = Path(sys.executable).resolve().parent
+else:
+    BUNDLE_DIR = Path(__file__).resolve().parent.parent.parent
+    APP_DIR = BUNDLE_DIR
+
+BASE_DIR = BUNDLE_DIR
+BACKEND_DIR = BUNDLE_DIR / "backend"
 
 class Settings:
     APP_NAME: str = "LANBridge"
@@ -11,9 +21,9 @@ class Settings:
     PORT: int = int(os.getenv("LANBRIDGE_PORT", "8000"))
 
     # Storage paths
-    DATA_DIR: Path = BASE_DIR / "data"
-    RECEIVED_DIR: Path = BASE_DIR / "received"
-    TEMP_DIR: Path = BASE_DIR / "temp"
+    DATA_DIR: Path = APP_DIR / "data"
+    RECEIVED_DIR: Path = APP_DIR / "received"
+    TEMP_DIR: Path = APP_DIR / "temp"
     DB_PATH: Path = DATA_DIR / "lanbridge.db"
 
     # Transfer settings
