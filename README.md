@@ -57,9 +57,18 @@ LANBridge works seamlessly across all platforms:
 
 ## 🚀 How to Run LANBridge
 
-### Option 1: Download Pre-built Release (Recommended)
+### Option 1: Standalone Executable (Windows — No Python Required)
 
-1. Download the latest **`lanbridge-portable.zip`** from [GitHub Releases](../../releases).
+1. Download **`LANBridge-windows-x64.zip`** (or `LANBridge.exe`) from [GitHub Releases](https://github.com/Frost730/LAN_Bridge/releases).
+2. Extract and double-click **`LANBridge.exe`**.
+3. It silently starts in the background and automatically opens your default browser at `http://localhost:8000`.
+4. You can **Restart** or **Shutdown** the server anytime directly from the **Settings** page in the web app!
+
+---
+
+### Option 2: Portable Script / Multi-Platform Release
+
+1. Download **`lanbridge-v1.0.0-portable.zip`** from [GitHub Releases](https://github.com/Frost730/LAN_Bridge/releases).
 2. Extract the ZIP file.
 3. Start the server:
    - **Windows**: Double-click **`start-windows.bat`**
@@ -68,7 +77,7 @@ LANBridge works seamlessly across all platforms:
 
 ---
 
-### Option 2: Docker / Docker Compose
+### Option 3: Docker / Docker Compose
 
 If you have Docker installed, you can launch LANBridge with a single command:
 
@@ -83,12 +92,12 @@ docker run -d --name lanbridge --network host -v $(pwd)/received:/app/received -
 
 ---
 
-### Option 3: Run from Source
+### Option 4: Run from Source
 
 #### 1. Clone Repository
 ```bash
-git clone https://github.com/your-username/lanbridge.git
-cd lanbridge
+git clone https://github.com/Frost730/LAN_Bridge.git
+cd LAN_Bridge
 ```
 
 #### 2. Start Host Server

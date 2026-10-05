@@ -188,4 +188,9 @@ export const api = {
     fetch(`${BASE_URL}/api/shutdown`, { method: 'POST' }).then((r) =>
       handleResponse<{ status: string; message: string }>(r)
     ),
+
+  restartServer: () =>
+    fetch(`${BASE_URL}/api/restart`, { method: 'POST' }).then((r) =>
+      handleResponse<{ status: string; message: string }>(r)
+    ),
 };

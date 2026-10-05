@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Shield, Zap, Bell, Palette, HardDrive, Check, Save, Power } from 'lucide-react';
+import { Settings, Shield, Zap, Bell, Palette, HardDrive, Check, Save, Power, RotateCcw } from 'lucide-react';
 import { AppSettings } from '../types';
 import { api } from '../services/api';
 import { Theme } from '../hooks/useTheme';
@@ -30,6 +30,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isRestarting, setIsRestarting] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -224,35 +225,62 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
         </div>
 
-        {/* Server Shutdown Control */}
-        <div className="bg-rose-50/50 dark:bg-rose-950/20 rounded-2xl p-6 border border-rose-200 dark:border-rose-900/60 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        {/* Server Host Controls (Restart & Shutdown) */}
+        <div className="bg-slate-100/70 dark:bg-slate-900/60 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center space-x-2 text-rose-600 dark:text-rose-400">
-              <Power className="w-5 h-5" />
-              <h3 className="font-bold text-sm">Shutdown LANBridge Server</h3>
+            <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200">
+              <Power className="w-5 h-5 text-brand-500" />
+              <h3 className="font-bold text-sm">Host Server Controls</h3>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Stops the background server and frees port 8000. Re-open LANBridge.exe when you want to transfer again.
+              Restart or completely shut down the background LANBridge host service.
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={async () => {
-              if (window.confirm('Shutdown LANBridge server? You will need to click LANBridge.exe to start it again.')) {
-                try {
-                  await api.shutdownServer();
-                  alert('LANBridge server has shut down. You can now close this browser tab.');
-                } catch {
-                  alert('Server shutdown initiated.');
+          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+            {/* Restart Button */}
+            <button
+              type="button"
+              disabled={isRestarting}
+              onClick={async () => {
+                if (window.confirm('Restart the LANBridge server? Active transfers will be paused.')) {
+                  setIsRestarting(true);
+                  try {
+                    await api.restartServer();
+                  } catch {
+                    // Ignore transient network drop during restart
+                  }
+                  setTimeout(() => {
+                    window.location.reload();
+                  }, 3500);
                 }
-              }
-            }}
-            className="flex items-center justify-center space-x-2 px-5 py-2.5 min-h-[44px] rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white font-semibold text-xs shadow-md shadow-rose-500/20 transition-all shrink-0 select-none"
-          >
-            <Power className="w-4 h-4" />
-            <span>Shutdown Server</span>
-          </button>
+              }}
+              className="flex items-center justify-center space-x-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-white font-semibold text-xs shadow-md shadow-amber-500/20 transition-all select-none disabled:opacity-50"
+            >
+              <RotateCcw className={`w-4 h-4 ${isRestarting ? 'animate-spin' : ''}`} />
+              <span>{isRestarting ? 'Restarting...' : 'Restart Server'}</span>
+            </button>
+
+            {/* Shutdown Button */}
+            <button
+              type="button"
+              disabled={isRestarting}
+              onClick={async () => {
+                if (window.confirm('Shutdown LANBridge server? You will need to click LANBridge.exe to start it again.')) {
+                  try {
+                    await api.shutdownServer();
+                    alert('LANBridge server has shut down. You can now close this browser tab.');
+                  } catch {
+                    alert('Server shutdown initiated.');
+                  }
+                }
+              }}
+              className="flex items-center justify-center space-x-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white font-semibold text-xs shadow-md shadow-rose-500/20 transition-all select-none disabled:opacity-50"
+            >
+              <Power className="w-4 h-4" />
+              <span>Shutdown Server</span>
+            </button>
+          </div>
         </div>
 
         {/* Save Button */}

@@ -102,3 +102,37 @@ async def shutdown_server():
         os._exit(0)
     threading.Thread(target=_exit, daemon=True).start()
     return {"status": "shutting_down", "message": "LANBridge server is shutting down..."}
+
+@router.post("/restart")
+async def restart_server():
+    """Restart the host server process."""
+    import sys
+    import subprocess
+    import threading
+    import time
+    
+    def _do_restart():
+        time.sleep(0.5)
+        try:
+            if getattr(sys, "frozen", False):
+                exe_path = sys.executable
+                if os.name == "nt":
+                    cmd = f'timeout /t 1 /nobreak >nul & "{exe_path}"'
+                    subprocess.Popen(cmd, shell=True, close_fds=True)
+                else:
+                    subprocess.Popen([exe_path], close_fds=True)
+            else:
+                py_exe = sys.executable
+                args = [py_exe] + sys.argv
+                if os.name == "nt":
+                    cmd = f'timeout /t 1 /nobreak >nul & "{py_exe}" {" ".join(f\'"{a}"\' for a in sys.argv)}'
+                    subprocess.Popen(cmd, shell=True, close_fds=True)
+                else:
+                    subprocess.Popen(args, close_fds=True)
+        except Exception:
+            pass
+        finally:
+            os._exit(0)
+
+    threading.Thread(target=_do_restart, daemon=True).start()
+    return {"status": "restarting", "message": "LANBridge server is restarting..."}
