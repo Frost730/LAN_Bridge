@@ -134,7 +134,7 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelected, disabled = 
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`relative rounded-2xl border-2 border-dashed transition-all duration-200 p-8 sm:p-12 text-center flex flex-col items-center justify-center ${
+      className={`relative rounded-2xl border-2 border-dashed transition-all duration-200 p-5 sm:p-10 text-center flex flex-col items-center justify-center ${
         isDragOver
           ? 'border-brand-500 bg-brand-50/70 dark:bg-brand-950/40 scale-[1.01]'
           : 'border-slate-300 dark:border-slate-700 bg-white/50 dark:bg-slate-900/50 hover:border-slate-400 dark:hover:border-slate-600'
@@ -159,24 +159,25 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelected, disabled = 
       />
 
       {/* Visual illustration */}
-      <div className="w-16 h-16 rounded-2xl bg-brand-100 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 flex items-center justify-center mb-4 shadow-inner">
-        <UploadCloud className="w-8 h-8 animate-bounce" />
+      <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-brand-100 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 flex items-center justify-center mb-3 sm:mb-4 shadow-inner">
+        <UploadCloud className="w-7 h-7 sm:w-8 sm:h-8 animate-bounce" />
       </div>
 
-      <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">
+      <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white mb-1">
         {isDragOver ? 'Drop files to send' : 'Send Files or Folders'}
       </h3>
-      <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm mb-6">
-        Drag and drop anything here, or choose directly from your device storage
+      <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-sm mb-5 sm:mb-6 px-2">
+        <span className="hidden sm:inline">Drag and drop anything here, or choose directly from your device.</span>
+        <span className="sm:hidden">Tap below to select photos, videos, or files directly from your phone.</span>
       </p>
 
-      {/* Buttons */}
-      <div className="flex flex-wrap items-center justify-center gap-3">
+      {/* Buttons - Stacked on mobile, side-by-side on tablet/desktop */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2.5 sm:gap-3 w-full sm:w-auto px-2 sm:px-0">
         <button
           type="button"
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 active:bg-brand-700 text-white font-medium text-sm shadow-md shadow-brand-500/20 transition-all"
+          className="flex items-center justify-center space-x-2 px-6 py-3 min-h-[48px] rounded-xl bg-brand-600 hover:bg-brand-500 active:scale-[0.98] text-white font-medium text-sm shadow-md shadow-brand-500/20 transition-all select-none"
         >
           <FileUp className="w-4 h-4" />
           <span>Send Files</span>
@@ -186,16 +187,16 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelected, disabled = 
           type="button"
           disabled={disabled}
           onClick={() => folderInputRef.current?.click()}
-          className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-medium text-sm border border-slate-200 dark:border-slate-700 transition-all"
+          className="flex items-center justify-center space-x-2 px-6 py-3 min-h-[48px] rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-[0.98] dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-medium text-sm border border-slate-200 dark:border-slate-700 transition-all select-none"
         >
           <FolderUp className="w-4 h-4" />
           <span>Send Folder</span>
         </button>
       </div>
 
-      <div className="mt-4 flex items-center text-xs text-slate-400 dark:text-slate-500">
-        <Sparkles className="w-3.5 h-3.5 mr-1 text-brand-500" />
-        High-speed chunked LAN streaming with SHA-256 integrity
+      <div className="mt-4 flex items-center text-[11px] sm:text-xs text-slate-400 dark:text-slate-500 px-2">
+        <Sparkles className="w-3.5 h-3.5 mr-1 text-brand-500 shrink-0" />
+        <span>Direct Wi-Fi / LAN streaming with SHA-256 integrity</span>
       </div>
     </div>
   );

@@ -38,6 +38,11 @@ export const api = {
       handleResponse<{ status: string }>(r)
     ),
 
+  disconnectDevice: (deviceId: string, untrust = true) =>
+    fetch(`${BASE_URL}/api/devices/${deviceId}/disconnect?untrust=${untrust}`, {
+      method: 'POST',
+    }).then((r) => handleResponse<{ status: string; disconnected: boolean }>(r)),
+
   // Pairing
   getPairingCode: () =>
     fetch(`${BASE_URL}/api/pair/code`, { method: 'POST' }).then((r) =>

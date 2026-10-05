@@ -64,6 +64,15 @@ async def remove_trusted_device(device_id: str) -> Dict[str, Any]:
     await db.remove_trusted_device(device_id)
     return {"status": "ok", "device_id": device_id}
 
+@router.post("/devices/{device_id}/disconnect")
+async def disconnect_device(device_id: str, untrust: bool = False) -> Dict[str, Any]:
+    from ..security.tokens import token_manager
+    token_manager.revoke_device_sessions(device_id)
+    if untrust:
+        await db.remove_trusted_device(device_id)
+    disconnected = await ws_manager.disconnect_device(device_id)
+    return {"status": "ok", "device_id": device_id, "disconnected": disconnected}
+
 @router.get("/settings")
 async def get_settings() -> Dict[str, Any]:
     return {

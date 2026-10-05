@@ -64,8 +64,8 @@ export const Navigation: React.FC<NavigationProps> = ({
       </nav>
 
       {/* Mobile Bottom Navigation Bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 pb-safe">
-        <div className="grid grid-cols-5 h-16">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-slate-800/80 pb-safe shadow-[0_-4px_16px_rgba(0,0,0,0.05)]">
+        <div className="grid grid-cols-5 h-16 px-1">
           {navItems
             .filter((item) => item.id !== 'diagnostics') // Diagnostics accessible from Settings on small screens
             .map((item) => {
@@ -75,21 +75,21 @@ export const Navigation: React.FC<NavigationProps> = ({
                 <button
                   key={item.id}
                   onClick={() => onTabChange(item.id)}
-                  className={`flex flex-col items-center justify-center space-y-1 relative ${
+                  className={`flex flex-col items-center justify-center py-1 transition-all select-none active:scale-90 ${
                     isActive
-                      ? 'text-brand-600 dark:text-brand-400 font-semibold'
-                      : 'text-slate-500 dark:text-slate-400'
+                      ? 'text-brand-600 dark:text-brand-400 font-bold'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                   }`}
                 >
-                  <div className="relative">
+                  <div className={`p-1 rounded-xl transition-colors relative ${isActive ? 'bg-brand-50 dark:bg-brand-950/60' : ''}`}>
                     <Icon className="w-5 h-5" />
                     {item.badge && (
-                      <span className="absolute -top-1 -right-2 bg-brand-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                      <span className="absolute -top-1 -right-1.5 bg-brand-600 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-extrabold shadow-sm">
                         {item.badge}
                       </span>
                     )}
                   </div>
-                  <span className="text-[11px]">{item.label}</span>
+                  <span className="text-[10px] tracking-tight mt-0.5">{item.label}</span>
                 </button>
               );
             })}

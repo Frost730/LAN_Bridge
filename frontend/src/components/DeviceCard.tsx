@@ -1,13 +1,14 @@
 import React from 'react';
-import { Smartphone, Monitor, Tablet, Laptop, Send, ShieldCheck, Wifi } from 'lucide-react';
+import { Smartphone, Monitor, Tablet, Laptop, Send, ShieldCheck, Wifi, Unplug } from 'lucide-react';
 import { DeviceInfo } from '../types';
 
 interface DeviceCardProps {
   device: DeviceInfo;
   onSendToDevice: (device: DeviceInfo) => void;
+  onDisconnect?: (device: DeviceInfo) => void;
 }
 
-export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onSendToDevice }) => {
+export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onSendToDevice, onDisconnect }) => {
   const renderIcon = (type: string) => {
     switch (type) {
       case 'phone':
@@ -60,6 +61,18 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onSendToDevice }
           <Send className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Send</span>
         </button>
+
+        {onDisconnect && (
+          <button
+            type="button"
+            onClick={() => onDisconnect(device)}
+            className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 dark:bg-slate-800 dark:hover:bg-rose-950/40 text-slate-500 text-xs font-semibold border border-slate-200 dark:border-slate-700 transition-colors"
+            title="Disconnect / Unpair Device"
+          >
+            <Unplug className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Disconnect</span>
+          </button>
+        )}
       </div>
     </div>
   );

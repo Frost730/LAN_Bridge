@@ -136,10 +136,10 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-300">
       {/* Tab Switcher */}
-      <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl max-w-sm mx-auto">
+      <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl w-full sm:max-w-sm mx-auto">
         <button
           onClick={() => setActiveTab('host')}
-          className={`flex-1 py-2 text-xs font-semibold rounded-xl flex items-center justify-center space-x-2 transition-all ${
+          className={`flex-1 py-2.5 min-h-[44px] text-xs font-semibold rounded-xl flex items-center justify-center space-x-2 transition-all select-none ${
             activeTab === 'host'
               ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -151,7 +151,7 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
 
         <button
           onClick={() => setActiveTab('join')}
-          className={`flex-1 py-2 text-xs font-semibold rounded-xl flex items-center justify-center space-x-2 transition-all ${
+          className={`flex-1 py-2.5 min-h-[44px] text-xs font-semibold rounded-xl flex items-center justify-center space-x-2 transition-all select-none ${
             activeTab === 'join'
               ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -164,37 +164,37 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
 
       {activeTab === 'host' ? (
         /* Host Connect Screen (QR + 6-digit Code) */
-        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm text-center">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1">
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm text-center">
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-1">
             Connect to {hostDevice?.device_name || 'This Host'}
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-6">
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-5 sm:mb-6">
             Scan the QR code with your phone camera, or open the network address on any device connected to the same Wi-Fi.
           </p>
 
           {/* QR Code Canvas */}
-          <div className="flex flex-col items-center justify-center my-6">
-            <div className="p-3 bg-white rounded-2xl shadow-md border border-slate-200 dark:border-slate-700 inline-block">
-              <canvas ref={canvasRef} className="rounded-xl" />
+          <div className="flex flex-col items-center justify-center my-4 sm:my-6">
+            <div className="p-3 bg-white rounded-2xl shadow-md border border-slate-200 dark:border-slate-700 inline-block max-w-[240px]">
+              <canvas ref={canvasRef} className="rounded-xl w-full h-auto" />
             </div>
             <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 flex items-center">
-              <Shield className="w-3.5 h-3.5 mr-1 text-emerald-500" />
-              Ephemeral one-time pairing token
+              <Shield className="w-3.5 h-3.5 mr-1 text-emerald-500 shrink-0" />
+              <span>Ephemeral one-time pairing token</span>
             </p>
           </div>
 
           {/* Direct Address */}
-          <div className="max-w-md mx-auto mb-6">
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+          <div className="max-w-md mx-auto mb-5 sm:mb-6">
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1 text-left sm:text-center">
               Network Address
             </label>
-            <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
-              <span className="font-mono text-xs text-brand-600 dark:text-brand-400 flex-1 truncate select-all">
+            <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-800 p-2 sm:p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 min-h-[46px]">
+              <span className="font-mono text-xs text-brand-600 dark:text-brand-400 flex-1 truncate select-all px-1">
                 {qrUrl.split('?')[0] || 'http://192.168.1.x:8000'}
               </span>
               <button
                 onClick={handleCopyUrl}
-                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                className="p-2 min-w-[38px] min-h-[38px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                 title="Copy Address"
               >
                 {copiedUrl ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
@@ -203,17 +203,17 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
           </div>
 
           {/* 6-Digit Pairing Code */}
-          <div className="max-w-md mx-auto p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+          <div className="max-w-md mx-auto p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+            <span className="text-[11px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">
               Pairing Code
             </span>
             <div className="flex items-center justify-center space-x-3 my-2">
-              <span className="font-mono text-3xl font-extrabold tracking-widest text-slate-900 dark:text-white select-all">
+              <span className="font-mono text-2xl sm:text-3xl font-extrabold tracking-widest text-slate-900 dark:text-white select-all">
                 {pairingCode || '------'}
               </span>
               <button
                 onClick={handleCopyCode}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                 title="Copy Code"
               >
                 {copiedCode ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
@@ -224,7 +224,7 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
               <span>Expires in {formatCountdown(expiresIn)}</span>
               <button
                 onClick={loadHostPairingInfo}
-                className="flex items-center space-x-1 text-brand-600 hover:text-brand-700 dark:text-brand-400"
+                className="flex items-center space-x-1 min-h-[36px] px-2 text-brand-600 hover:text-brand-700 dark:text-brand-400"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 <span>Refresh</span>

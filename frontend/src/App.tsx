@@ -28,6 +28,7 @@ export function App() {
     pendingPairRequest,
     setPendingPairRequest,
     updateName,
+    unpairSelf,
   } = useDevice();
 
   const {
@@ -109,6 +110,7 @@ export function App() {
         onThemeChange={setTheme}
         onUpdateName={updateName}
         onOpenConnect={() => setIsConnectModalOpen(true)}
+        onUnpairSelf={unpairSelf}
       />
 
       {/* Navigation (Desktop Tabs & Mobile Bar) */}
@@ -119,7 +121,7 @@ export function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-12">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-8 py-4 sm:py-6 pb-28 sm:pb-24 md:pb-12">
         {currentTab === 'dashboard' && (
           <Dashboard
             localDevice={localDevice}
@@ -164,17 +166,20 @@ export function App() {
             currentTheme={theme}
             onThemeChange={setTheme}
             onUpdateDeviceName={updateName}
+            onUnpairSelf={unpairSelf}
           />
         )}
       </main>
 
       {/* Pair / Connect Modal */}
       {isConnectModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl max-w-xl w-full p-5 sm:p-6 pb-safe sm:pb-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative max-h-[92vh] sm:max-h-[90vh] overflow-y-auto">
+            {/* Mobile Drag Indicator Handle */}
+            <div className="w-10 h-1 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mb-3 sm:hidden" />
             <button
               onClick={() => setIsConnectModalOpen(false)}
-              className="absolute top-5 right-5 p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              className="absolute top-4 right-4 sm:top-5 sm:right-5 p-2 rounded-xl min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
             >
               ✕
             </button>

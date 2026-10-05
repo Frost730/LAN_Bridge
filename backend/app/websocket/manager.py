@@ -111,4 +111,24 @@ class ConnectionManager:
             return await self.send_to_device(self._host_device_id, message)
         return False
 
+    async def disconnect_device(self, device_id: str) -> bool:
+        """Forcefully disconnects an active device and notifies it"""
+        sockets = list(self._device_websockets.get(device_id, set()))
+        if not sockets:
+            return False
+        for ws in sockets:
+            try:
+                await ws.send_text(json.dumps({
+                    "type": "device_disconnected_by_host",
+                    "device_id": device_id,
+                    "message": "You have been disconnected / unpaired by the host."
+                }))
+                await ws.close(code=1000, reason="Disconnected by host")
+            except Exception:
+                pass
+            self._connections.pop(ws, None)
+        self._device_websockets.pop(device_id, None)
+        await self.broadcast_peer_list()
+        return True
+
 ws_manager = ConnectionManager()

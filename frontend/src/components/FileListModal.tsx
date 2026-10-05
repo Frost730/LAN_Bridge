@@ -51,13 +51,16 @@ export const FileListModal: React.FC<FileListModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-2xl max-w-lg w-full p-5 sm:p-6 pb-safe sm:pb-6 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh] sm:max-h-[85vh]">
+        {/* Mobile Drag Indicator Handle */}
+        <div className="w-10 h-1 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mb-3 sm:hidden shrink-0" />
+
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-brand-100 dark:bg-brand-900/50 text-brand-600 flex items-center justify-center">
-              {isFolder ? <Folder className="w-4 h-4" /> : <File className="w-4 h-4" />}
+        <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-9 h-9 rounded-xl bg-brand-100 dark:bg-brand-900/50 text-brand-600 flex items-center justify-center shrink-0">
+              {isFolder ? <Folder className="w-5 h-5" /> : <File className="w-5 h-5" />}
             </div>
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white text-base">
@@ -71,14 +74,14 @@ export const FileListModal: React.FC<FileListModalProps> = ({
           <button
             onClick={onClose}
             disabled={isSending}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* File preview list */}
-        <div className="flex-1 overflow-y-auto py-4 space-y-2 max-h-60 pr-1">
+        <div className="flex-1 overflow-y-auto py-3 sm:py-4 space-y-2 max-h-52 sm:max-h-60 pr-1">
           {files.map((item, idx) => (
             <div
               key={idx}
@@ -96,17 +99,17 @@ export const FileListModal: React.FC<FileListModalProps> = ({
               <button
                 onClick={() => handleRemoveFile(idx)}
                 disabled={isSending}
-                className="p-1 text-slate-400 hover:text-rose-500 transition-colors"
+                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors rounded-lg"
                 title="Remove"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
           ))}
         </div>
 
         {/* Destination device selector */}
-        <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+        <div className="pt-3 sm:pt-4 border-t border-slate-200 dark:border-slate-800">
           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
             Send to Device:
           </label>
@@ -114,10 +117,10 @@ export const FileListModal: React.FC<FileListModalProps> = ({
           {onlineDevices.length === 0 ? (
             <div className="flex items-center space-x-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs">
               <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>No other devices currently connected to this LANBridge host. Open LANBridge on another phone or PC to pair!</span>
+              <span>No other devices connected to this LANBridge host. Open LANBridge on another device to pair!</span>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3 max-h-36 sm:max-h-44 overflow-y-auto">
               {onlineDevices.map((device) => {
                 const isSelected = selectedDevice?.device_id === device.device_id;
                 return (
@@ -125,13 +128,13 @@ export const FileListModal: React.FC<FileListModalProps> = ({
                     key={device.device_id}
                     type="button"
                     onClick={() => setSelectedDevice(device)}
-                    className={`flex items-center space-x-2.5 p-3 rounded-xl border text-left transition-all ${
+                    className={`flex items-center space-x-2.5 p-3 rounded-xl border text-left min-h-[48px] transition-all select-none ${
                       isSelected
                         ? 'border-brand-500 bg-brand-50/80 dark:bg-brand-950/50 text-brand-900 dark:text-brand-100 ring-2 ring-brand-500/20'
                         : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40 text-slate-700 dark:text-slate-300 hover:border-slate-300'
                     }`}
                   >
-                    <span className="text-brand-500">{renderDeviceIcon(device.device_type)}</span>
+                    <span className="text-brand-500 shrink-0">{renderDeviceIcon(device.device_type)}</span>
                     <div className="truncate">
                       <p className="font-semibold text-xs truncate">{device.device_name}</p>
                       <p className="text-[10px] text-slate-500">{device.os} • {device.ip_address || 'LAN'}</p>
@@ -143,12 +146,12 @@ export const FileListModal: React.FC<FileListModalProps> = ({
           )}
 
           {/* Action buttons */}
-          <div className="flex items-center justify-end space-x-3 mt-4">
+          <div className="grid grid-cols-2 sm:flex sm:items-center sm:justify-end gap-2.5 sm:gap-3 mt-4">
             <button
               type="button"
               onClick={onClose}
               disabled={isSending}
-              className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="flex items-center justify-center px-4 py-2.5 min-h-[46px] rounded-xl text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               Cancel
             </button>
@@ -156,7 +159,7 @@ export const FileListModal: React.FC<FileListModalProps> = ({
               type="button"
               disabled={!selectedDevice || files.length === 0 || isSending}
               onClick={() => selectedDevice && onSend(selectedDevice)}
-              className="flex items-center space-x-2 px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 active:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold shadow-md shadow-brand-500/20 transition-all"
+              className="flex items-center justify-center space-x-2 px-6 py-2.5 min-h-[46px] rounded-xl bg-brand-600 hover:bg-brand-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold shadow-md shadow-brand-500/20 transition-all select-none"
             >
               {isSending ? (
                 <>

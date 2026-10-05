@@ -88,15 +88,34 @@ export function useDevice() {
       }
     });
 
+    const unsubDisconnected = wsClient.on('device_disconnected_by_host', (data) => {
+      localStorage.removeItem('lanbridge_session_token');
+      setPairStatus('idle');
+      alert(data.message || 'You have been disconnected from the host.');
+    });
+
     return () => {
       unsubConn();
       unsubDevices();
       unsubPairReq();
       unsubPairApproved();
       unsubPairRejected();
+      unsubDisconnected();
       wsClient.disconnect();
     };
   }, [localDevice, refreshHostDevice, refreshDevices]);
+
+  const unpairSelf = async () => {
+    if (window.confirm('Are you sure you want to disconnect and unpair this device?')) {
+      try {
+        await api.disconnectDevice(localDevice.device_id, true);
+      } catch {}
+      localStorage.removeItem('lanbridge_session_token');
+      wsClient.disconnect();
+      setPairStatus('idle');
+      window.location.reload();
+    }
+  };
 
   return {
     localDevice,
@@ -109,5 +128,6 @@ export function useDevice() {
     setPairStatus,
     updateName,
     refreshDevices,
+    unpairSelf,
   };
 }

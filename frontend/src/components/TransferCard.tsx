@@ -36,10 +36,10 @@ export const TransferCard: React.FC<TransferCardProps> = ({
   const isWaiting = transfer.status === 'waiting_for_acceptance' || transfer.status === 'queued';
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all">
       {/* Top Row: File icon, Title, Status & Actions */}
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex items-center space-x-3 min-w-0 flex-1">
+      <div className="flex items-start justify-between gap-2.5 sm:gap-3 mb-3">
+        <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0 flex-1">
           <div
             className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
               isCompleted
@@ -54,7 +54,7 @@ export const TransferCard: React.FC<TransferCardProps> = ({
             {transfer.is_folder ? <Folder className="w-5 h-5" /> : <File className="w-5 h-5" />}
           </div>
 
-          <div className="truncate">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center space-x-2">
               <h4 className="font-semibold text-sm text-slate-900 dark:text-white truncate">
                 {transfer.root_name || (transfer.files[0] ? transfer.files[0].filename : 'Transfer')}
@@ -69,8 +69,8 @@ export const TransferCard: React.FC<TransferCardProps> = ({
                 </span>
               )}
             </div>
-            <div className="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400">
-              <span>
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              <span className="truncate">
                 {transfer.direction === 'sent' ? `To ${transfer.receiver_name}` : `From ${transfer.sender_name}`}
               </span>
               <span>•</span>
@@ -84,11 +84,11 @@ export const TransferCard: React.FC<TransferCardProps> = ({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center space-x-1.5 shrink-0">
+        <div className="flex items-center space-x-1 shrink-0">
           {isTransferring && (
             <button
               onClick={() => onPause(transfer.transfer_id)}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               title="Pause Transfer"
             >
               <Pause className="w-4 h-4" />
@@ -98,7 +98,7 @@ export const TransferCard: React.FC<TransferCardProps> = ({
           {isPaused && (
             <button
               onClick={() => onResume(transfer.transfer_id)}
-              className="p-1.5 rounded-lg text-brand-600 hover:text-brand-700 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-950 transition-colors"
+              className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-brand-600 hover:text-brand-700 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-950 transition-colors"
               title="Resume Transfer"
             >
               <Play className="w-4 h-4" />
@@ -108,7 +108,7 @@ export const TransferCard: React.FC<TransferCardProps> = ({
           {(isTransferring || isPaused || isWaiting) && (
             <button
               onClick={() => onCancel(transfer.transfer_id)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+              className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
               title="Cancel Transfer"
             >
               <X className="w-4 h-4" />
@@ -123,7 +123,7 @@ export const TransferCard: React.FC<TransferCardProps> = ({
                   : `/api/transfers/${transfer.transfer_id}/files/${transfer.files[0]?.file_id}/download`
               }
               download
-              className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-brand-50 hover:bg-brand-100 dark:bg-brand-950/60 dark:hover:bg-brand-900/60 text-brand-600 dark:text-brand-400 text-xs font-semibold transition-colors"
+              className="flex items-center space-x-1 px-3 py-1.5 min-h-[36px] rounded-lg bg-brand-50 hover:bg-brand-100 dark:bg-brand-950/60 dark:hover:bg-brand-900/60 text-brand-600 dark:text-brand-400 text-xs font-semibold transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Save</span>
@@ -149,8 +149,8 @@ export const TransferCard: React.FC<TransferCardProps> = ({
       </div>
 
       {/* Metrics Row: % | Speed | ETA | State */}
-      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-        <div className="flex items-center space-x-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 pt-0.5">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className="font-bold text-slate-900 dark:text-white">
             {transfer.progress_percentage}%
           </span>
@@ -162,7 +162,7 @@ export const TransferCard: React.FC<TransferCardProps> = ({
               </span>
               <span>•</span>
               <span className="flex items-center">
-                <Clock className="w-3 h-3 mr-1" />
+                <Clock className="w-3 h-3 mr-1 shrink-0" />
                 {formatETA(transfer.eta_seconds)}
               </span>
             </>
@@ -170,16 +170,16 @@ export const TransferCard: React.FC<TransferCardProps> = ({
         </div>
 
         {/* State Badge */}
-        <div>
+        <div className="self-start sm:self-auto">
           {isCompleted && (
             <span className="inline-flex items-center text-emerald-600 dark:text-emerald-400 font-medium">
-              <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+              <CheckCircle2 className="w-3.5 h-3.5 mr-1 shrink-0" />
               SHA-256 Verified ✓
             </span>
           )}
           {isVerifying && (
             <span className="inline-flex items-center text-brand-600 dark:text-brand-400 animate-pulse font-medium">
-              <ShieldCheck className="w-3.5 h-3.5 mr-1" />
+              <ShieldCheck className="w-3.5 h-3.5 mr-1 shrink-0" />
               Verifying file integrity...
             </span>
           )}
@@ -190,7 +190,7 @@ export const TransferCard: React.FC<TransferCardProps> = ({
           )}
           {isFailed && (
             <span className="inline-flex items-center text-rose-500 font-medium">
-              <AlertCircle className="w-3.5 h-3.5 mr-1" />
+              <AlertCircle className="w-3.5 h-3.5 mr-1 shrink-0" />
               {transfer.error_message || 'Transfer failed'}
             </span>
           )}

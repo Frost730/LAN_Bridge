@@ -5,7 +5,13 @@
 @layer base {
   html {
     -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
     scroll-behavior: smooth;
+  }
+
+  body {
+    overscroll-behavior-y: none;
+    -webkit-overflow-scrolling: touch;
   }
 }
 
@@ -25,6 +31,23 @@
   background: rgba(148, 163, 184, 0.7);
 }
 
+/* Safe area insets for notches, dynamic islands & home bars */
+.pt-safe {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
 .pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 1rem);
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+.pl-safe {
+  padding-left: max(1rem, env(safe-area-inset-left));
+}
+.pr-safe {
+  padding-right: max(1rem, env(safe-area-inset-right));
+}
+
+/* Touch active micro-animations */
+@media (hover: none) and (pointer: coarse) {
+  button:active, a:active {
+    transform: scale(0.97);
+  }
 }

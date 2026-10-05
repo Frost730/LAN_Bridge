@@ -8,12 +8,14 @@ interface SettingsPageProps {
   currentTheme: Theme;
   onThemeChange: (theme: Theme) => void;
   onUpdateDeviceName: (name: string) => void;
+  onUnpairSelf?: () => void;
 }
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({
   currentTheme,
   onThemeChange,
   onUpdateDeviceName,
+  onUnpairSelf,
 }) => {
   const [settings, setSettings] = useState<AppSettings>({
     device_name: '',
@@ -88,6 +90,26 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
+
+          {onUnpairSelf && (
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div>
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
+                  Disconnect & Unpair Device
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Disconnects this device from the host and removes stored session tokens.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={onUnpairSelf}
+                className="px-3.5 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900/60 text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 text-xs font-semibold transition-colors shrink-0 ml-3"
+              >
+                Disconnect
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Security Settings */}

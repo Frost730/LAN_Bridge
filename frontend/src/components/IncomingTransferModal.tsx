@@ -15,18 +15,21 @@ export const IncomingTransferModal: React.FC<IncomingTransferModalProps> = ({
   onReject,
 }) => {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl max-w-md w-full p-6 pb-safe sm:pb-6 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col">
+        {/* Mobile Drag Indicator Handle */}
+        <div className="w-10 h-1 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mb-3 sm:hidden shrink-0" />
+
         {/* Icon & Title */}
         <div className="flex items-center space-x-3 mb-4">
-          <div className="w-12 h-12 rounded-2xl bg-brand-100 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 flex items-center justify-center shadow-inner">
+          <div className="w-12 h-12 rounded-2xl bg-brand-100 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 flex items-center justify-center shadow-inner shrink-0">
             <DownloadCloud className="w-6 h-6 animate-pulse" />
           </div>
-          <div>
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+          <div className="min-w-0 flex-1">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white truncate">
               Incoming Transfer
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
               From <span className="font-semibold text-brand-600 dark:text-brand-400">{transfer.sender_name}</span>
             </p>
           </div>
@@ -39,7 +42,7 @@ export const IncomingTransferModal: React.FC<IncomingTransferModalProps> = ({
             <span className="text-slate-900 dark:text-white font-bold">{formatBytes(transfer.total_size)}</span>
           </div>
 
-          <div className="mt-2.5 max-h-40 overflow-y-auto space-y-1.5 pr-1">
+          <div className="mt-2.5 max-h-36 sm:max-h-40 overflow-y-auto space-y-1.5 pr-1">
             {transfer.files.map((file, idx) => (
               <div key={idx} className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300">
                 <div className="flex items-center space-x-2 truncate mr-2">
@@ -58,7 +61,7 @@ export const IncomingTransferModal: React.FC<IncomingTransferModalProps> = ({
 
         <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center mb-6">
           <AlertTriangle className="w-3.5 h-3.5 mr-1.5 text-amber-500 shrink-0" />
-          Transfer will stream directly over your local Wi-Fi / Ethernet.
+          <span>Direct transfer over Wi-Fi / Ethernet</span>
         </div>
 
         {/* Actions */}
@@ -66,7 +69,7 @@ export const IncomingTransferModal: React.FC<IncomingTransferModalProps> = ({
           <button
             type="button"
             onClick={() => onReject(transfer.transfer_id)}
-            className="flex items-center justify-center space-x-2 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm font-semibold transition-all"
+            className="flex items-center justify-center space-x-2 px-4 py-3 min-h-[48px] rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm font-semibold transition-all select-none active:scale-[0.98]"
           >
             <X className="w-4 h-4 text-rose-500" />
             <span>Reject</span>
@@ -75,7 +78,7 @@ export const IncomingTransferModal: React.FC<IncomingTransferModalProps> = ({
           <button
             type="button"
             onClick={() => onAccept(transfer.transfer_id)}
-            className="flex items-center justify-center space-x-2 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 active:bg-brand-700 text-white text-sm font-semibold shadow-md shadow-brand-500/25 transition-all"
+            className="flex items-center justify-center space-x-2 px-4 py-3 min-h-[48px] rounded-xl bg-brand-600 hover:bg-brand-500 active:scale-[0.98] text-white text-sm font-semibold shadow-md shadow-brand-500/25 transition-all select-none"
           >
             <Check className="w-4 h-4" />
             <span>Accept</span>
