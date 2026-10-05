@@ -5,6 +5,12 @@ import time
 import webbrowser
 from pathlib import Path
 
+# Redirect stdout and stderr if None (when compiled with console=False)
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 # Add backend directory to sys.path
 if getattr(sys, "frozen", False):
     backend_dir = Path(sys._MEIPASS) / "backend"

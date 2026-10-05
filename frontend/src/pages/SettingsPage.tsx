@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Shield, Zap, Bell, Palette, HardDrive, Check, Save } from 'lucide-react';
+import { Settings, Shield, Zap, Bell, Palette, HardDrive, Check, Save, Power } from 'lucide-react';
 import { AppSettings } from '../types';
 import { api } from '../services/api';
 import { Theme } from '../hooks/useTheme';
@@ -222,6 +222,37 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Server Shutdown Control */}
+        <div className="bg-rose-50/50 dark:bg-rose-950/20 rounded-2xl p-6 border border-rose-200 dark:border-rose-900/60 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center space-x-2 text-rose-600 dark:text-rose-400">
+              <Power className="w-5 h-5" />
+              <h3 className="font-bold text-sm">Shutdown LANBridge Server</h3>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Stops the background server and frees port 8000. Re-open LANBridge.exe when you want to transfer again.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={async () => {
+              if (window.confirm('Shutdown LANBridge server? You will need to click LANBridge.exe to start it again.')) {
+                try {
+                  await api.shutdownServer();
+                  alert('LANBridge server has shut down. You can now close this browser tab.');
+                } catch {
+                  alert('Server shutdown initiated.');
+                }
+              }
+            }}
+            className="flex items-center justify-center space-x-2 px-5 py-2.5 min-h-[44px] rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white font-semibold text-xs shadow-md shadow-rose-500/20 transition-all shrink-0 select-none"
+          >
+            <Power className="w-4 h-4" />
+            <span>Shutdown Server</span>
+          </button>
         </div>
 
         {/* Save Button */}

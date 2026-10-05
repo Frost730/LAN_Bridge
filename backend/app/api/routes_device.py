@@ -91,3 +91,14 @@ async def update_settings(new_settings: Dict[str, Any]) -> Dict[str, Any]:
     for k, v in new_settings.items():
         await db.set_setting(k, v)
     return {"status": "ok"}
+
+@router.post("/shutdown")
+async def shutdown_server():
+    """Cleanly exit the host server process when running in windowed/noconsole mode."""
+    import threading
+    import time
+    def _exit():
+        time.sleep(0.5)
+        os._exit(0)
+    threading.Thread(target=_exit, daemon=True).start()
+    return {"status": "shutting_down", "message": "LANBridge server is shutting down..."}

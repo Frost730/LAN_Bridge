@@ -182,4 +182,10 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
     }).then((r) => handleResponse<{ status: string }>(r)),
+
+  // Server Management
+  shutdownServer: () =>
+    fetch(`${BASE_URL}/api/shutdown`, { method: 'POST' }).then((r) =>
+      handleResponse<{ status: string; message: string }>(r)
+    ),
 };
