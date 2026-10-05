@@ -1,0 +1,208 @@
+import pytest
+import hashlib
+import os
+from pathlib import Path
+from app.transfer.manager import TransferManager
+from app.transfer.protocol import TransferState, FileTransferState
+from app.config import settings
+from app.database.db import db
+
+@pytest.mark.asyncio
+async def test_chunk_upload_and_sha256_verification(tmp_path, monkeypatch):
+    # Redirect temp, received, and db paths to tmp_path
+    temp_dir = tmp_path / "temp"
+    received_dir = tmp_path / "received"
+    temp_dir.mkdir()
+    received_dir.mkdir()
+    monkeypatch.setattr(settings, "TEMP_DIR", temp_dir)
+    monkeypatch.setattr(settings, "RECEIVED_DIR", received_dir)
+    
+    from app.database.db import db
+    monkeypatch.setattr(db, "db_path", tmp_path / "test.db")
+    await db.init_db()
+
+    manager = TransferManager()
+
+    # Create dummy 100KB payload
+    payload = b"LANBridge High Speed Transfer Test! " * 2800  # ~100KB
+    expected_hash = hashlib.sha256(payload).hexdigest()
+
+    transfer = manager.create_transfer(
+        transfer_id="test-xfer-1",
+        sender_device_id="sender-1",
+        sender_name="Gaming-PC",
+        receiver_device_id="receiver-1",
+        receiver_name="Galaxy-Phone",
+        is_folder=False,
+        root_name="test.bin",
+        files_data=[{
+            "file_id": "file-1",
+            "filename": "test.bin",
+            "relative_path": "test.bin",
+            "size": len(payload),
+            "sha256": expected_hash
+        }]
+    )
+
+    # Receiver accepts
+    assert manager.accept_transfer("test-xfer-1") is True
+    assert transfer.status == TransferState.TRANSFERRING
+
+    # Split into 3 chunks
+    chunk_size = 35000
+    chunks = [payload[i:i+chunk_size] for i in range(0, len(payload), chunk_size)]
+
+    offset = 0
+    for idx, chunk_data in enumerate(chunks):
+        success, err = await manager.write_chunk(
+            transfer_id="test-xfer-1",
+            file_id="file-1",
+            chunk_index=idx,
+            offset=offset,
+            data=chunk_data
+        )
+        assert success is True
+        assert err is None
+        offset += len(chunk_data)
+
+    # Verification: Transfer should be COMPLETED and file saved in received dir
+    assert transfer.status == TransferState.COMPLETED
+    final_file = received_dir / "test.bin"
+    assert final_file.exists()
+    assert final_file.read_bytes() == payload
+
+@pytest.mark.asyncio
+async def test_resume_interrupted_transfer(tmp_path, monkeypatch):
+    temp_dir = tmp_path / "temp"
+    received_dir = tmp_path / "received"
+    temp_dir.mkdir()
+    received_dir.mkdir()
+    monkeypatch.setattr(settings, "TEMP_DIR", temp_dir)
+    monkeypatch.setattr(settings, "RECEIVED_DIR", received_dir)
+    monkeypatch.setattr(db, "db_path", tmp_path / "test_resume.db")
+    await db.init_db()
+
+    manager = TransferManager()
+    payload = b"Resume Test Buffer " * 1000
+    expected_hash = hashlib.sha256(payload).hexdigest()
+
+    transfer = manager.create_transfer(
+        transfer_id="test-resume-1",
+        sender_device_id="dev-a",
+        sender_name="Laptop",
+        receiver_device_id="dev-b",
+        receiver_name="Desktop",
+        is_folder=False,
+        root_name="resume.txt",
+        files_data=[{
+            "file_id": "f1",
+            "filename": "resume.txt",
+            "relative_path": "resume.txt",
+            "size": len(payload),
+            "sha256": expected_hash
+        }]
+    )
+    manager.accept_transfer("test-resume-1")
+
+    # Send only first chunk of 5000 bytes
+    chunk1 = payload[:5000]
+    await manager.write_chunk("test-resume-1", "f1", chunk_index=0, offset=0, data=chunk1)
+
+    # Pause transfer
+    assert manager.pause_transfer("test-resume-1") is True
+    assert transfer.status == TransferState.PAUSED
+
+    # Attempting to write while paused should fail
+    success, _ = await manager.write_chunk("test-resume-1", "f1", chunk_index=1, offset=5000, data=payload[5000:])
+    assert success is False
+
+    # Check status for resume query
+    status_data = transfer.to_dict()
+    assert status_data["bytes_transferred"] == 5000
+    assert status_data["status"] == "paused"
+
+    # Resume transfer
+    assert manager.resume_transfer("test-resume-1") is True
+    assert transfer.status == TransferState.TRANSFERRING
+
+    # Send remaining chunk
+    chunk2 = payload[5000:]
+    success, err = await manager.write_chunk("test-resume-1", "f1", chunk_index=1, offset=5000, data=chunk2)
+    assert success is True
+
+    # Entire transfer completes successfully
+    assert transfer.status == TransferState.COMPLETED
+    assert (received_dir / "resume.txt").read_bytes() == payload
+
+@pytest.mark.asyncio
+async def test_transfer_cancellation_cleans_temp_files(tmp_path, monkeypatch):
+    temp_dir = tmp_path / "temp"
+    received_dir = tmp_path / "received"
+    temp_dir.mkdir()
+    received_dir.mkdir()
+    monkeypatch.setattr(settings, "TEMP_DIR", temp_dir)
+    monkeypatch.setattr(settings, "RECEIVED_DIR", received_dir)
+
+    manager = TransferManager()
+    transfer = manager.create_transfer(
+        transfer_id="test-cancel-1",
+        sender_device_id="dev-a",
+        sender_name="Laptop",
+        receiver_device_id="dev-b",
+        receiver_name="Desktop",
+        is_folder=False,
+        root_name="cancel.dat",
+        files_data=[{
+            "file_id": "f_cancel",
+            "filename": "cancel.dat",
+            "relative_path": "cancel.dat",
+            "size": 10000
+        }]
+    )
+    manager.accept_transfer("test-cancel-1")
+    await manager.write_chunk("test-cancel-1", "f_cancel", chunk_index=0, offset=0, data=b"partial data")
+
+    temp_file = Path(transfer.files["f_cancel"].temp_filepath)
+    assert temp_file.exists()
+
+    # Cancel transfer
+    assert manager.cancel_transfer("test-cancel-1") is True
+    assert transfer.status == TransferState.CANCELLED
+    # Incomplete temp file must be cleaned up
+    assert not temp_file.exists()
+
+@pytest.mark.asyncio
+async def test_sha256_integrity_failure_detection(tmp_path, monkeypatch):
+    temp_dir = tmp_path / "temp"
+    received_dir = tmp_path / "received"
+    temp_dir.mkdir()
+    received_dir.mkdir()
+    monkeypatch.setattr(settings, "TEMP_DIR", temp_dir)
+    monkeypatch.setattr(settings, "RECEIVED_DIR", received_dir)
+
+    manager = TransferManager()
+    data = b"Authentic payload"
+    wrong_hash = "0000000000000000000000000000000000000000000000000000000000000000"
+
+    manager.create_transfer(
+        transfer_id="test-tamper-1",
+        sender_device_id="dev-a",
+        sender_name="Laptop",
+        receiver_device_id="dev-b",
+        receiver_name="Desktop",
+        is_folder=False,
+        root_name="tampered.bin",
+        files_data=[{
+            "file_id": "f_tamper",
+            "filename": "tampered.bin",
+            "relative_path": "tampered.bin",
+            "size": len(data),
+            "sha256": wrong_hash
+        }]
+    )
+    manager.accept_transfer("test-tamper-1")
+
+    # Upload corrupt/mismatched data
+    success, err = await manager.write_chunk("test-tamper-1", "f_tamper", chunk_index=0, offset=0, data=data)
+    assert success is False
+    assert "Integrity check failed" in err

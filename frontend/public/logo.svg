@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1468f5"/>
+      <stop offset="100%" stop-color="#0d3aa9"/>
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)"/>
+  <!-- Bridge / Node mesh -->
+  <circle cx="160" cy="180" r="32" fill="#ffffff" />
+  <circle cx="352" cy="180" r="32" fill="#ffffff" />
+  <circle cx="256" cy="340" r="38" fill="url(#glowGrad)" />
+  <!-- Connecting bridge arcs & beams -->
+  <path d="M160 180 Q256 120 352 180" stroke="#ffffff" stroke-width="20" stroke-linecap="round" fill="none"/>
+  <path d="M160 180 L256 340" stroke="#93c5fd" stroke-width="16" stroke-dasharray="12 12" stroke-linecap="round"/>
+  <path d="M352 180 L256 340" stroke="#93c5fd" stroke-width="16" stroke-dasharray="12 12" stroke-linecap="round"/>
+  <!-- Lightning / Fast Transfer Chevron -->
+  <path d="M256 220 L275 260 L245 260 L260 300" stroke="#ffffff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>
