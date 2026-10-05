@@ -108,6 +108,14 @@ class WebSocketClient {
     }
   }
 
+  public send(data: any): boolean {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(typeof data === 'string' ? data : JSON.stringify(data));
+      return true;
+    }
+    return false;
+  }
+
   public disconnect(): void {
     this.stopHeartbeat();
     if (this.reconnectTimer) {

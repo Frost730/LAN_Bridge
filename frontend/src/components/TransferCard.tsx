@@ -55,9 +55,20 @@ export const TransferCard: React.FC<TransferCardProps> = ({
           </div>
 
           <div className="truncate">
-            <h4 className="font-semibold text-sm text-slate-900 dark:text-white truncate">
-              {transfer.root_name || (transfer.files[0] ? transfer.files[0].filename : 'Transfer')}
-            </h4>
+            <div className="flex items-center space-x-2">
+              <h4 className="font-semibold text-sm text-slate-900 dark:text-white truncate">
+                {transfer.root_name || (transfer.files[0] ? transfer.files[0].filename : 'Transfer')}
+              </h4>
+              {transfer.transport === 'webrtc' ? (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-200 dark:border-amber-800 shrink-0">
+                  WebRTC P2P ⚡
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400 border border-blue-200 dark:border-blue-800 shrink-0">
+                  HTTP LAN 🚀
+                </span>
+              )}
+            </div>
             <div className="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400">
               <span>
                 {transfer.direction === 'sent' ? `To ${transfer.receiver_name}` : `From ${transfer.sender_name}`}

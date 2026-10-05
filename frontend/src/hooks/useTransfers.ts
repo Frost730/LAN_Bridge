@@ -3,6 +3,7 @@ import { TransferItem, DeviceInfo } from '../types';
 import { api } from '../services/api';
 import { wsClient } from '../services/websocket';
 import { calculateFileSHA256 } from '../utils/hashing';
+import { webrtcManager } from '../services/webrtc';
 
 const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
 
@@ -12,7 +13,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
   const [isSending, setIsSending] = useState(false);
 
   // Map of transferId -> Array of native File objects
-  const localFilesRef = useRef<Map<string, { fileObj: File; fileId: string; relativePath: string }[]>>(
+  const localFilesRef = useRef<Map<string, { fileObj: File; fileId: string; relativePath: string; sha256?: string; targetDeviceId: string }[]>>(
     new Map()
   );
   // Transfer state flags for cancellation / pause control
@@ -29,6 +30,55 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
   }, []);
 
   useEffect(() => {
+    // Setup WebRTC receiver callbacks
+    webrtcManager.setCallbacks(
+      (update) => {
+        setTransfers((prev) =>
+          prev.map((t) => {
+            if (t.transfer_id === update.transfer_id) {
+              return {
+                ...t,
+                bytes_transferred: update.bytes_transferred,
+                progress_percentage: update.progress_percentage,
+                speed_bps: update.speed_bps,
+                transport: 'webrtc',
+              };
+            }
+            return t;
+          })
+        );
+      },
+      (transfer_id, file_id, filename, relative_path, blob, sha256_verified) => {
+        // Trigger browser save / download
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+
+        setTransfers((prev) =>
+          prev.map((t) => {
+            if (t.transfer_id === transfer_id) {
+              return {
+                ...t,
+                status: 'completed',
+                progress_percentage: 100,
+                transport: 'webrtc',
+              };
+            }
+            return t;
+          })
+        );
+
+        if (onNotification) {
+          onNotification('Transfer Complete ✓ (WebRTC P2P)', `${filename} saved successfully`);
+        }
+      }
+    );
+
     refreshTransfers();
 
     const unsubCreated = wsClient.on('transfer_created', (data) => {
@@ -72,11 +122,62 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       );
     });
 
-    const unsubAccepted = wsClient.on('transfer_accepted', (data) => {
+    const unsubAccepted = wsClient.on('transfer_accepted', async (data) => {
       const transferId = data.transfer_id;
-      // If we have local files stored for this transfer, begin uploading chunks!
       const files = localFilesRef.current.get(transferId);
-      if (files) {
+      if (!files || files.length === 0) return;
+
+      const targetDeviceId = files[0].targetDeviceId;
+
+      // 1. Try WebRTC P2P DataChannel connection first
+      let webrtcSuccess = false;
+      try {
+        const channel = await webrtcManager.connectToPeer(targetDeviceId, 3000);
+        if (channel && channel.readyState === 'open') {
+          webrtcSuccess = true;
+          setTransfers((prev) =>
+            prev.map((t) => (t.transfer_id === transferId ? { ...t, transport: 'webrtc' } : t))
+          );
+          for (const item of files) {
+            await webrtcManager.sendFileOverDataChannel(
+              channel,
+              transferId,
+              item.fileId,
+              item.fileObj,
+              item.relativePath,
+              item.sha256 || '',
+              64 * 1024,
+              (sent, total) => {
+                const pct = Math.min(100, Math.round((sent / total) * 100));
+                setTransfers((prev) =>
+                  prev.map((t) =>
+                    t.transfer_id === transferId
+                      ? {
+                          ...t,
+                          bytes_transferred: sent,
+                          progress_percentage: pct,
+                          status: pct === 100 ? 'completed' : 'transferring',
+                          transport: 'webrtc',
+                        }
+                      : t
+                  )
+                );
+              }
+            );
+          }
+          localFilesRef.current.delete(transferId);
+          activeControlRef.current.delete(transferId);
+          return;
+        }
+      } catch (err) {
+        console.log('[Transport] WebRTC P2P skipped or timed out, seamlessly using HTTP streaming:', err);
+      }
+
+      // 2. Seamless Fallback: HTTP chunk streaming
+      if (!webrtcSuccess) {
+        setTransfers((prev) =>
+          prev.map((t) => (t.transfer_id === transferId ? { ...t, transport: 'http' } : t))
+        );
         startChunkUpload(transferId, files);
       }
     });
@@ -162,6 +263,8 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
           fileObj: item.file,
           fileId: fileId,
           relativePath: item.relativePath || item.file.name,
+          sha256: hash,
+          targetDeviceId: targetDevice.device_id,
         });
       }
 

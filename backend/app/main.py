@@ -109,6 +109,18 @@ async def websocket_endpoint(
             # Handle client-side ping/heartbeat
             if data == "ping":
                 await websocket.send_text("pong")
+                continue
+
+            # Handle WebRTC signaling and targeted peer messaging
+            try:
+                import json
+                msg = json.loads(data)
+                target_id = msg.get("target_device_id")
+                if target_id:
+                    msg["from_device_id"] = device_id
+                    await ws_manager.send_to_device(target_id, msg)
+            except Exception:
+                pass
     except WebSocketDisconnect:
         await ws_manager.disconnect(websocket)
     except Exception as e:

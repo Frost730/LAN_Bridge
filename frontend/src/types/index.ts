@@ -57,6 +57,7 @@ export interface TransferItem {
   created_at: number;
   completed_at?: number | null;
   error_message?: string | null;
+  transport?: 'webrtc' | 'http';
 }
 
 export interface HistoryItem {
