@@ -52,8 +52,8 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Brand & Connection Status */}
         <div className="flex items-center space-x-2.5 sm:space-x-3 shrink-0">
-          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-blue-400 flex items-center justify-center shadow-md shadow-brand-500/20 shrink-0">
-            <img src="/logo.svg" alt="LANBridge" className="w-6 h-6 sm:w-7 sm:h-7" />
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden shadow-md shadow-brand-500/25 shrink-0 border border-brand-500/20">
+            <img src="/app-icon.png" alt="LANBridge" className="w-full h-full object-cover rounded-xl" />
           </div>
           <div>
             <div className="flex items-center space-x-1.5 sm:space-x-2">

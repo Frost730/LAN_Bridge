@@ -54,6 +54,7 @@ exe = EXE(
     a.datas,
     [],
     name='LANBridge',
+    icon='icon.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
