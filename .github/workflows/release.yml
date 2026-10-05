@@ -1,0 +1,68 @@
+name: Build & Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Frontend Dependencies & Build Bundle
+        working-directory: ./frontend
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Install Backend Dependencies & Run Tests
+        run: |
+          pip install -r backend/requirements.txt
+          pytest backend/tests
+
+      - name: Package Standalone Release Archive
+        run: |
+          mkdir -p package/lanbridge
+          cp -r backend package/lanbridge/
+          mkdir -p package/lanbridge/frontend
+          cp -r frontend/dist package/lanbridge/frontend/dist
+          cp run.py package/lanbridge/
+          cp start-windows.bat package/lanbridge/
+          cp start-linux-mac.sh package/lanbridge/
+          chmod +x package/lanbridge/start-linux-mac.sh
+          cp Dockerfile package/lanbridge/
+          cp docker-compose.yml package/lanbridge/
+          cp README.md package/lanbridge/
+          cp LICENSE package/lanbridge/
+          
+          cd package
+          zip -r ../lanbridge-portable.zip lanbridge
+          cd ..
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: lanbridge-portable.zip
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true

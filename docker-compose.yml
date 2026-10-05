@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  lanbridge:
+    build: .
+    container_name: lanbridge
+    restart: unless-stopped
+    network_mode: host # Enables direct LAN discovery (mDNS) and zero-overhead local transfers
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./received:/app/received
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0

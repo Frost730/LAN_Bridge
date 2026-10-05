@@ -1,100 +1,120 @@
 # LANBridge ⚡
 
 > **High-speed, private, local network file and folder transfer application.**  
-> Transfer files directly between Windows, Android, macOS, and Linux devices over Wi-Fi/Ethernet — **100% offline, zero cloud relay, no user accounts required.**
+> Transfer files and folders directly between Windows, Android, macOS, Linux, and iOS devices over Wi-Fi/Ethernet — **100% offline, zero cloud relay, no user accounts required.**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.9+](https://img.shields.io/badge/Python-3.9+-brightgreen.svg)](https://www.python.org/)
+[![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
+[![WebRTC](https://img.shields.io/badge/Transport-WebRTC%20P2P%20%2B%20HTTP-orange.svg)](https://webrtc.org/)
 
 ---
 
 ## 📖 Overview
 
-**LANBridge** is an open-source, web-based local file transfer utility engineered for maximum speed, security, and simplicity. It allows any device on your local area network (LAN) to exchange files and folders directly without routing data through third-party servers or the Internet.
+**LANBridge** is an open-source, web-based local file transfer application engineered for maximum speed, security, and simplicity. It allows any device on your local area network (LAN) to exchange files and entire directories directly without routing data through third-party servers or the Internet.
 
-The host computer runs a lightweight Python/FastAPI service that binds to your local network interface. Any other device (phones, tablets, laptops) simply opens the host's IP address or scans a generated QR code in their browser to begin transferring at wire speed.
+The host computer runs a lightweight service that binds to your local network interface (`0.0.0.0:8000`). Any other device (phones, tablets, laptops) simply opens the host's IP address or scans a generated QR code in their browser to begin transferring at wire speed.
 
 ---
 
-## ✨ Features
+## ✨ Key Features
 
-- 🚀 **Wire-Speed LAN Transfers**: Optimized chunked binary streaming (2MB - 4MB configurable) achieving maximum Gigabit Wi-Fi / Ethernet throughput.
-- 📁 **Full Folder Transfers**: Preserves directory trees, nested subfolders, and relative paths (`Project/src/App.tsx`). Graceful ZIP fallback for browsers without native folder writing.
+- ⚡ **WebRTC P2P + HTTP Streaming**: Direct peer-to-peer browser-to-browser transfers via RTCDataChannel, with automatic fallback to high-speed chunked HTTP streaming.
+- 📁 **Full Folder Transfers**: Preserves directory trees, nested subfolders, and relative paths (`Project/src/App.tsx`). Graceful ZIP download fallback for browsers without native folder writing.
 - 🔄 **Resumable Transfers**: Automatic recovery if a Wi-Fi drop occurs. Preserves verified chunks on disk and resumes from the exact missing chunk offset without restarting from 0.
 - ⏸️ **Pause / Resume / Cancel**: Real-time transfer controls with immediate temporary file cleanup on cancellation.
 - 🔒 **Cryptographic Integrity**: Streaming SHA-256 verification detects corrupted or tampered files before finalizing.
+- 📱 **All-Device Friendly UI**: Custom-tailored layouts for smartphones (mobile bottom navigation, bottom-sheet dialogs, 48px touch targets, notch/safe-area support) and desktops.
+- 🔌 **Disconnect & Unpair Controls**: Easily disconnect or unpair any connected device at any time from the dashboard, device list, or header.
 - 📱 **QR Code & 6-Digit Pairing**: Instant device pairing via camera scan or temporary rate-limited 6-digit code.
 - 🛡️ **Host Access Control**: Approval prompts for new devices with optional "Trust this device" persistent whitelist.
 - 🛡️ **Strict Security & Path Traversal Protection**: Complete sanitization of filenames and relative paths, preventing directory escapes (`../../`, Windows drive letters, null bytes, DOS reserved names).
 - 🔍 **mDNS / Zeroconf Discovery**: Automatic discovery of other LANBridge host instances across the local subnet.
 - 📊 **Network Diagnostics & LAN Speed Test**: Built-in LAN throughput benchmark measuring true local network bandwidth (latency, upload, download).
-- 📱 **Installable PWA & Responsive UI**: Works seamlessly on Desktop (sidebar layout) and Mobile (bottom navigation bar, touch-friendly, offline-ready application shell).
 - 🌓 **Dark Mode**: System, Light, and Dark mode preferences with persistent storage.
 - 📴 **100% Local & Offline**: Self-contained runtime with zero external CDNs, fonts, or tracking scripts.
 
 ---
 
-## 🏛️ Architecture
+## 📱 Device Compatibility
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                    Host Machine (Server)                    │
-│                                                             │
-│   FastAPI + Uvicorn (0.0.0.0:8000)                          │
-│   ├── Static React SPA Bundle                               │
-│   ├── Chunk Streaming Engine (HTTP PUT binary stream)       │
-│   ├── WebSocket Signaling Hub (Presence & Progress)         │
-│   ├── mDNS Discovery (Zeroconf _lanbridge._tcp.local)       │
-│   └── SQLite Metadata Store (Tokens, History, Devices)      │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ Local Wi-Fi / Ethernet
-         ┌─────────────────────┼─────────────────────┐
-         ▼                     ▼                     ▼
-  ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
-  │Android Phone │      │    Laptop    │      │    Tablet    │
-  │Web Browser   │      │Web Browser   │      │Web Browser   │
-  └──────────────┘      └──────────────┘      └──────────────┘
+LANBridge works seamlessly across all platforms:
+
+| Device / OS | Role | Method |
+| :--- | :--- | :--- |
+| **Windows** | Host or Client | Double-click `start-windows.bat` or open in Chrome / Edge / Firefox |
+| **macOS** | Host or Client | Run `./start-linux-mac.sh` or open in Safari / Chrome |
+| **Linux** | Host or Client | Run `./start-linux-mac.sh` or Docker |
+| **Android** | Client | Open browser (Chrome, Samsung Internet, Firefox) or scan QR code |
+| **iOS / iPadOS** | Client | Open Safari or scan QR code with Camera |
+| **Docker / NAS** | Host | `docker-compose up` on Unraid, Synology, TrueNAS, Raspberry Pi |
+
+> 💡 **Notice**: Client devices (phones, tablets, other laptops) **do NOT need to install anything**! They simply open the host's network URL in their web browser.
+
+---
+
+## 🚀 How to Run LANBridge
+
+### Option 1: Download Pre-built Release (Recommended)
+
+1. Download the latest **`lanbridge-portable.zip`** from [GitHub Releases](../../releases).
+2. Extract the ZIP file.
+3. Start the server:
+   - **Windows**: Double-click **`start-windows.bat`**
+   - **Linux / macOS**: Open terminal and run **`./start-linux-mac.sh`**
+4. Open the displayed URL in your browser (e.g. `http://localhost:8000`), or scan the QR code from your phone!
+
+---
+
+### Option 2: Docker / Docker Compose
+
+If you have Docker installed, you can launch LANBridge with a single command:
+
+```bash
+docker compose up -d
+```
+
+Or run with plain Docker:
+```bash
+docker run -d --name lanbridge --network host -v $(pwd)/received:/app/received -v $(pwd)/data:/app/data lanbridge
 ```
 
 ---
 
-## 🚀 Quick Start (Production Mode)
+### Option 3: Run from Source
 
-LANBridge is designed to run with **a single command**.
-
-### Prerequisites
-- Python 3.10+
-- Node.js 18+ (only needed if building from source)
-
-### 1. Clone & Set Up
+#### 1. Clone Repository
 ```bash
 git clone https://github.com/your-username/lanbridge.git
 cd lanbridge
+```
 
-# Create Python virtual environment
-python -m venv backend/.venv
+#### 2. Start Host Server
+```bash
+# Windows
+start-windows.bat
 
-# Activate virtual environment
-# Windows:
-backend\.venv\Scripts\activate
-# Linux/macOS:
-source backend/.venv/bin/activate
+# Linux / macOS
+chmod +x start-linux-mac.sh
+./start-linux-mac.sh
+```
 
-# Install backend dependencies
+*(Optional manual start)*:
+```bash
+# Setup virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install requirements
 pip install -r backend/requirements.txt
-```
 
-### 2. Build Frontend
-```bash
-cd frontend
-npm install
-npm run build
-cd ..
-```
-
-### 3. Launch Application
-```bash
+# Run server
 python run.py
 ```
 
-The terminal will display your connection links:
+The terminal will print:
 ```text
 =======================================================
   >> LANBridge -- Local Network File Transfer
@@ -109,111 +129,48 @@ The terminal will display your connection links:
 
 ---
 
-## 💻 Development Mode
+## 📲 How to Connect Other Devices
 
-To work on backend and frontend concurrently with hot-reloading:
-
-### Terminal 1: Backend
-```bash
-cd backend
-python -m venv .venv
-# Activate venv
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-### Terminal 2: Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open `http://localhost:5173` in your browser. Vite proxies `/api` and `/ws` to port 8000.
+1. Ensure both devices are connected to the **same Wi-Fi or Ethernet network**.
+2. On your host screen, click **Pair New Device** to reveal the **QR Code** and **6-Digit Pairing Code**.
+3. On your phone, tablet, or another computer:
+   - **Scan QR Code**: Open the camera app and tap the link, **OR**
+   - **Type URL**: Open your mobile browser and go to `http://<HOST-IP>:8000` (e.g. `http://192.168.1.37:8000`).
+4. Enter the 6-digit code or tap "Request Access".
+5. On the host screen, click **Allow** (optionally check *"Trust this device"* to remember it).
+6. Start sending files and folders at wire speed!
 
 ---
 
-## 📱 Cross-Platform Usage Guide
+## 🔒 Security Architecture
 
-### Windows ↔ Android Phone
-1. Start LANBridge on your Windows PC (`python run.py`).
-2. Click **Pair Device** on the PC screen to display the QR Code.
-3. Open your phone camera or browser and scan the QR code.
-4. The phone opens `http://<PC-IP>:8000/?pair=<token>` and sends a pairing request.
-5. Click **Allow** (and optionally **Trust this device**) on the PC.
-6. Now you can drag & drop or select files on either device to transfer instantly.
+Because LANBridge is accessible to other devices on your local network, strict security controls are built into every layer:
 
-### Windows ↔ macOS / Linux
-Open `http://<host-ip>:8000` in Safari, Chrome, or Firefox on macOS/Linux. Enter the 6-digit pairing code shown on the host PC or pair via QR.
-
----
-
-## 🔒 Security Model
-
-- **Local Network Scope**: The server only accepts traffic on the local subnet. It never connects to an external cloud or relays your data.
-- **Ephemeral Pairing Codes**: 6-digit codes and QR tokens expire after 5 to 10 minutes and are invalidated once consumed.
-- **Rate Limiting**: Brute-force protection blocks pairing code guessing after 5 failed attempts per minute.
-- **Path Traversal Defenses**:
-  - Filenames are sanitized, stripping invalid OS characters and Windows reserved devices (`CON`, `PRN`, `AUX`, `NUL`).
-  - Directory components containing `..` or leading `/` or Windows drive letters (`C:`) are rejected.
-  - Final target file paths are strictly asserted to be contained within the dedicated `received/` folder using `os.path.commonpath`.
-- **Integrity Validation**: Transfers are verified against a streaming SHA-256 hash. Files with hash mismatches are flagged as failed and quarantined.
-
----
-
-## 🔥 Windows Firewall Troubleshooting
-
-When running `python run.py` for the first time, Windows Defender Firewall may prompt:  
-*"Windows Defender Firewall has blocked some features of this app"*.
-
-1. Check **Private networks, such as my home or work network**.
-2. Click **Allow access**.
-3. If phones cannot reach `http://<PC-IP>:8000`, verify that your PC's network profile is set to **Private Network** (Windows Settings → Network & Internet → Wi-Fi/Ethernet → Network Profile Type → **Private**).
-
----
-
-## 🌐 Browser Capabilities & Limitations
-
-| Feature | Desktop Chrome / Edge | Firefox | Safari (iOS/macOS) | Android Chrome |
-|---|---|---|---|---|
-| Single / Multi-file Transfer | ✅ Full | ✅ Full | ✅ Full | ✅ Full |
-| Folder Drag & Drop | ✅ Full | ✅ Full | ✅ Full | ⚠️ Pick via files |
-| Directory Picker (`webkitdirectory`) | ✅ Full | ✅ Full | ⚠️ Files only | ⚠️ Files only |
-| Resumable Chunk Streaming | ✅ Full | ✅ Full | ✅ Full | ✅ Full |
-| SHA-256 Web Crypto | ✅ Full | ✅ Full | ✅ Full | ✅ Full |
-| Folder Download Fallback | 📦 ZIP Download | 📦 ZIP Download | 📦 ZIP Download | 📦 ZIP Download |
-
-*Note: Mobile browsers do not grant arbitrary directory write access. When receiving folders on mobile or browsers without directory write APIs, LANBridge provides a one-click **Save ZIP** download containing the full preserved folder hierarchy.*
+- **Zero Outside Access**: Does not require or open WAN/Internet ports (UPnP is never used).
+- **Strict Path Traversal Defenses**: Strips absolute path roots, drive specifiers (`C:\`), directory traversal sequences (`../`), null bytes, and Windows reserved DOS device names (`CON`, `PRN`, `AUX`, `NUL`).
+- **Device Pairing Approval**: Untrusted devices cannot initiate or receive file transfers without explicit host approval.
+- **Ephemeral Pairing Credentials**: QR tokens and 6-digit codes automatically expire after 5 minutes and are strictly rate-limited against brute-force attempts.
+- **Single-Click Disconnect**: Instantly terminate connections and unpair devices at any time.
 
 ---
 
 ## 🧪 Automated Testing
 
-LANBridge includes a comprehensive test suite covering security, tokens, chunk uploads, pause/resume, and large file streaming:
+LANBridge includes a comprehensive pytest test suite covering security, chunked uploads, resume mechanics, cancellation cleanup, and streaming integrity:
 
 ```bash
-# Run backend pytest suite
 pytest backend/tests
 ```
 
-### Tested Scenarios:
-- ✅ Malicious path traversal attempts (`../../`, `..\..\`, `/etc/passwd`, `C:\Windows`)
-- ✅ Windows reserved names sanitization (`CON`, `PRN`, `AUX`)
-- ✅ Pairing token expiration and 6-digit code rate limiting
-- ✅ Chunk upload, reassembly, and streaming SHA-256 hash verification
-- ✅ Interrupted transfer resumption from partial chunk offsets
-- ✅ Cancellation temporary file cleanup
-- ✅ Memory-bounded streaming for 10MB+ files (non-linear memory growth)
-
----
-
-## 🔮 Future Improvements
-
-- **WebRTC DataChannel Mode**: Browser-to-browser peer direct transfers without passing chunks through the host daemon.
-- **TLS Self-Signed Wizard**: Optional internal HTTPS certificate generation for environments where secure context APIs are needed.
-- **Native Tray Application**: Lightweight desktop system tray wrapper for Windows, macOS, and Linux.
+All 16 unit tests verify:
+- Path traversal rejection (`../../etc/passwd`, Windows drive escapes)
+- Ephemeral pairing token validity & rate-limiting
+- Binary chunk validation and streaming memory bounds (<10MB RAM usage)
+- Resumption from specific chunk offsets
+- Incomplete temporary file cleanup upon cancellation
 
 ---
 
 ## 📄 License
 
-MIT License. Free for personal and commercial use.
+Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for more information.
