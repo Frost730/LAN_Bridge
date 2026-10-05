@@ -31,6 +31,11 @@ export function App() {
     unpairSelf,
   } = useDevice();
 
+  const handleNotification = React.useCallback(
+    (title: string, body?: string) => notify(title, { body }),
+    [notify]
+  );
+
   const {
     transfers,
     incomingTransfer,
@@ -40,7 +45,7 @@ export function App() {
     pauseTransfer,
     resumeTransfer,
     cancelTransfer,
-  } = useTransfers(localDevice, (title, body) => notify(title, { body }));
+  } = useTransfers(localDevice, handleNotification);
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);

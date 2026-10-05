@@ -12,6 +12,14 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
   const [incomingTransfer, setIncomingTransfer] = useState<TransferItem | null>(null);
   const [isSending, setIsSending] = useState(false);
 
+  // Keep a stable ref for onNotification callback to prevent re-subscription loops
+  const onNotificationRef = useRef(onNotification);
+  useEffect(() => {
+    onNotificationRef.current = onNotification;
+  });
+
+  const localDeviceId = localDevice.device_id;
+
   // Map of transferId -> Array of native File objects
   const localFilesRef = useRef<Map<string, { fileObj: File; fileId: string; relativePath: string; sha256?: string; targetDeviceId: string }[]>>(
     new Map()
@@ -73,8 +81,8 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
           })
         );
 
-        if (onNotification) {
-          onNotification('Transfer Complete ✓ (WebRTC P2P)', `${filename} saved successfully`);
+        if (onNotificationRef.current) {
+          onNotificationRef.current('Transfer Complete ✓ (WebRTC P2P)', `${filename} saved successfully`);
         }
       }
     );
@@ -93,10 +101,10 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     const unsubRequested = wsClient.on('transfer_requested', (data) => {
       if (data.transfer) {
         // If this device is the receiver, show acceptance prompt
-        if (data.transfer.receiver_device_id === localDevice.device_id) {
+        if (data.transfer.receiver_device_id === localDeviceId) {
           setIncomingTransfer(data.transfer);
-          if (onNotification) {
-            onNotification(
+          if (onNotificationRef.current) {
+            onNotificationRef.current(
               `Incoming Transfer from ${data.transfer.sender_name}`,
               `${data.transfer.files.length} file(s) (${Math.round(data.transfer.total_size / 1024 / 1024)} MB)`
             );
@@ -191,8 +199,8 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
 
     const unsubCompleted = wsClient.on('transfer_completed', (data) => {
       refreshTransfers();
-      if (onNotification) {
-        onNotification('Transfer Complete ✓', 'Files transferred successfully');
+      if (onNotificationRef.current) {
+        onNotificationRef.current('Transfer Complete ✓', 'Files transferred successfully');
       }
     });
 
@@ -231,7 +239,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       unsubResumed();
       unsubCancelled();
     };
-  }, [localDevice.device_id, onNotification, refreshTransfers]);
+  }, [localDeviceId, refreshTransfers]);
 
   // Initiate sending files/folder to a peer
   const sendFiles = async (
