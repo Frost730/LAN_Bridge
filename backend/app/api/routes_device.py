@@ -211,7 +211,9 @@ async def get_ice_servers() -> List[Dict[str, Any]]:
     turn_username = settings.TURN_USERNAME or await db.get_setting("turn_username", None)
     turn_credential = settings.TURN_CREDENTIAL or await db.get_setting("turn_credential", None)
 
+    has_custom_turn = False
     if turn_url and turn_username and turn_credential:
+        has_custom_turn = True
         urls = [u.strip() for u in turn_url.split(",") if u.strip()]
         servers.append({
             "urls": urls,
@@ -232,9 +234,22 @@ async def get_ice_servers() -> List[Dict[str, Any]]:
                 if res.status_code == 200:
                     data = res.json()
                     if isinstance(data, list):
+                        has_custom_turn = True
                         servers.extend(data)
         except Exception:
             pass
+
+    # If no custom TURN configured, add public community OpenRelay (100% free, zero-config, no card needed)
+    if not has_custom_turn:
+        servers.append({
+            "urls": [
+                "turn:openrelay.metered.ca:80",
+                "turn:openrelay.metered.ca:443",
+                "turns:openrelay.metered.ca:443?transport=tcp",
+            ],
+            "username": "openrelayproject",
+            "credential": "openrelayproject"
+        })
 
     return servers
 

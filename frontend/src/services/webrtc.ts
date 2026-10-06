@@ -33,6 +33,16 @@ const ICE_SERVERS: RTCIceServer[] = [
       'stun:global.stun.twilio.com:3478',
     ],
   },
+  // OpenRelay community TURN servers by Metered.ca (Free, zero-config, no card needed)
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turns:openrelay.metered.ca:443?transport=tcp',
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
 ];
 
 interface ReceivingFileEntry {
