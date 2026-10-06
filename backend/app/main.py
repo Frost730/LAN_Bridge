@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from .config import settings, BASE_DIR
 from .database.db import db
@@ -146,17 +146,26 @@ async def websocket_endpoint(
         logger.debug(f"WebSocket error: {e}")
         await ws_manager.disconnect(websocket)
 
-@app.get("/health")
-@app.get("/healthz")
+DIST_DIR = BASE_DIR / "frontend" / "dist"
+
+@app.api_route("/health", methods=["GET", "HEAD"])
+@app.api_route("/healthz", methods=["GET", "HEAD"])
 async def health_check():
     return {"status": "ok", "app": settings.APP_NAME, "version": settings.VERSION}
 
+# Explicit root endpoint for Render health checker (responds 200 OK to both GET and HEAD)
+@app.api_route("/", methods=["GET", "HEAD"])
+async def root_index():
+    index_file = DIST_DIR / "index.html"
+    if index_file.is_file():
+        return FileResponse(index_file)
+    return Response(content="OK", media_type="text/plain", status_code=200)
+
 # Serve built frontend in production mode
-DIST_DIR = BASE_DIR / "frontend" / "dist"
 if DIST_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
 
-    @app.get("/{full_path:path}")
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
     async def serve_spa(full_path: str):
         file_path = DIST_DIR / full_path
         if file_path.is_file():
@@ -164,4 +173,4 @@ if DIST_DIR.exists():
         index_file = DIST_DIR / "index.html"
         if index_file.is_file():
             return FileResponse(index_file)
-        return {"status": "ok", "message": "LANBridge is running"}
+        return Response(content="OK", media_type="text/plain", status_code=200)
