@@ -125,7 +125,8 @@ async def restart_server():
                 py_exe = sys.executable
                 args = [py_exe] + sys.argv
                 if os.name == "nt":
-                    cmd = f'timeout /t 1 /nobreak >nul & "{py_exe}" {" ".join(f\'"{a}"\' for a in sys.argv)}'
+                    quoted_args = " ".join(f'"{a}"' for a in sys.argv)
+                    cmd = f'timeout /t 1 /nobreak >nul & "{py_exe}" {quoted_args}'
                     subprocess.Popen(cmd, shell=True, close_fds=True)
                 else:
                     subprocess.Popen(args, close_fds=True)
