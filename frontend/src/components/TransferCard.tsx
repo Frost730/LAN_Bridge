@@ -33,6 +33,7 @@ export const TransferCard: React.FC<TransferCardProps> = ({
 }) => {
   const isCompleted = transfer.status === 'completed';
   const isFailed = transfer.status === 'failed';
+  const isCancelled = transfer.status === 'cancelled';
   const isPaused = transfer.status === 'paused';
   const isTransferring = transfer.status === 'transferring';
   const isVerifying = transfer.status === 'verifying';
@@ -47,7 +48,7 @@ export const TransferCard: React.FC<TransferCardProps> = ({
             className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
               isCompleted
                 ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400'
-                : isFailed
+                : isFailed || isCancelled
                 ? 'bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400'
                 : isPaused
                 ? 'bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400'
@@ -160,7 +161,7 @@ export const TransferCard: React.FC<TransferCardProps> = ({
           className={`h-full transition-all duration-300 rounded-full ${
             isCompleted
               ? 'bg-emerald-500'
-              : isFailed
+              : isFailed || isCancelled
               ? 'bg-rose-500'
               : isPaused
               ? 'bg-amber-500'
@@ -210,10 +211,10 @@ export const TransferCard: React.FC<TransferCardProps> = ({
               Paused at {transfer.progress_percentage}%
             </span>
           )}
-          {isFailed && (
+          {(isFailed || isCancelled) && (
             <span className="inline-flex items-center text-rose-500 font-medium">
               <AlertCircle className="w-3.5 h-3.5 mr-1 shrink-0" />
-              {transfer.error_message || 'Transfer failed'}
+              {transfer.error_message || (isCancelled ? 'Declined' : 'Transfer failed')}
             </span>
           )}
           {isWaiting && (

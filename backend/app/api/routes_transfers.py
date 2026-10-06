@@ -119,19 +119,23 @@ async def accept_transfer(transfer_id: str, trust_device: bool = Query(False)) -
 async def reject_transfer(transfer_id: str) -> Dict[str, Any]:
     session = transfer_manager.get_transfer(transfer_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Transfer not found")
+        return {"status": "ok", "deleted": True, "transfer_id": transfer_id}
 
-    transfer_manager.reject_transfer(transfer_id)
-    await ws_manager.send_to_device(session.sender_device_id, {
-        "type": "transfer_rejected",
+    sender_device_id = session.sender_device_id
+    transfer_manager.delete_transfer(transfer_id)
+
+    if sender_device_id:
+        await ws_manager.send_to_device(sender_device_id, {
+            "type": "transfer_rejected",
+            "transfer_id": transfer_id
+        })
+
+    await ws_manager.broadcast({
+        "type": "transfer_deleted",
         "transfer_id": transfer_id
     })
-    await ws_manager.broadcast({
-        "type": "transfer_updated",
-        "transfer": session.to_dict()
-    })
 
-    return session.to_dict()
+    return {"status": "ok", "deleted": True, "transfer_id": transfer_id}
 
 @router.post("/{transfer_id}/pause")
 async def pause_transfer(transfer_id: str) -> Dict[str, Any]:

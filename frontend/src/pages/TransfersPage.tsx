@@ -24,6 +24,9 @@ export const TransfersPage: React.FC<TransfersPageProps> = ({
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
 
   const filtered = transfers.filter((t) => {
+    if (t.status === 'cancelled' && t.bytes_transferred === 0) {
+      return false;
+    }
     if (filter === 'active') {
       return (
         t.status === 'transferring' ||

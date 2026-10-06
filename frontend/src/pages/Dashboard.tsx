@@ -81,7 +81,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const activeTransfers = transfers.filter(
     (t) => t.status === 'transferring' || t.status === 'paused' || t.status === 'waiting_for_acceptance' || t.status === 'queued'
   );
-  const recentTransfers = transfers.slice(0, 5);
+  const recentTransfers = transfers
+    .filter((t) => !(t.status === 'cancelled' && t.bytes_transferred === 0))
+    .slice(0, 5);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">

@@ -306,6 +306,10 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       activeSendingTransfersRef.current.delete(transferId);
       localFilesRef.current.delete(transferId);
       activeControlRef.current.delete(transferId);
+      setTransfers((prev) => prev.filter((t) => t.transfer_id !== transferId));
+      if (onNotificationRef.current) {
+        onNotificationRef.current('Transfer Declined', 'The recipient declined the transfer request.');
+      }
       refreshTransfers();
     });
 
@@ -593,8 +597,9 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
 
   const rejectIncoming = async (transferId: string) => {
     try {
-      await api.rejectTransfer(transferId);
       setIncomingTransfer(null);
+      setTransfers((prev) => prev.filter((t) => t.transfer_id !== transferId));
+      await api.rejectTransfer(transferId);
       refreshTransfers();
     } catch (e) {
       console.error('Failed to reject transfer:', e);
