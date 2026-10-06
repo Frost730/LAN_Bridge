@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Shield, Zap, Bell, Palette, HardDrive, Check, Save, Power, RotateCcw, Cloud } from 'lucide-react';
+import { Settings, Shield, Zap, Bell, Palette, HardDrive, Check, Save, Power, RotateCcw, Cloud, Sun, Moon, Monitor } from 'lucide-react';
 import { AppSettings, DeviceInfo } from '../types';
 import { api } from '../services/api';
 import { Theme } from '../hooks/useTheme';
@@ -41,13 +41,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   }, [localDevice.device_name]);
 
   useEffect(() => {
+    setSettings((prev) => ({ ...prev, theme: currentTheme }));
+  }, [currentTheme]);
+
+  useEffect(() => {
     const load = async () => {
       try {
         const [s, h] = await Promise.all([
           api.getSettings(),
           api.getHostDevice().catch(() => null)
         ]);
-        setSettings(s);
+        setSettings({ ...s, theme: currentTheme });
         if (h) setHostDevice(h);
       } catch {
         // Fallback
@@ -254,18 +258,26 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            {(['system', 'light', 'dark'] as const).map((t) => (
+            {[
+              { id: 'system' as const, label: 'System', icon: Monitor },
+              { id: 'light' as const, label: 'Light', icon: Sun },
+              { id: 'dark' as const, label: 'Dark', icon: Moon },
+            ].map(({ id, label, icon: Icon }) => (
               <button
-                key={t}
+                key={id}
                 type="button"
-                onClick={() => setSettings({ ...settings, theme: t })}
-                className={`py-2 px-3 rounded-xl border text-xs font-semibold capitalize transition-all ${
-                  settings.theme === t
-                    ? 'border-brand-500 bg-brand-50/80 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 ring-2 ring-brand-500/20'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                onClick={() => {
+                  setSettings((prev) => ({ ...prev, theme: id }));
+                  onThemeChange(id);
+                }}
+                className={`flex items-center justify-center space-x-1.5 py-2.5 px-3 rounded-xl border text-xs font-semibold capitalize transition-all ${
+                  currentTheme === id
+                    ? 'border-brand-500 bg-brand-50/80 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 ring-2 ring-brand-500/20 shadow-sm'
+                    : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                 }`}
               >
-                {t}
+                <Icon className="w-3.5 h-3.5" />
+                <span>{label}</span>
               </button>
             ))}
           </div>
