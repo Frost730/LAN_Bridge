@@ -38,8 +38,8 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
     setIsLoading(true);
     try {
       const [tokenRes, codeRes] = await Promise.all([
-        api.getPairingToken(),
-        api.getPairingCode(),
+        api.getPairingToken(localDevice.device_id),
+        api.getPairingCode(localDevice.device_id),
       ]);
 
       setQrUrl(tokenRes.connect_url);

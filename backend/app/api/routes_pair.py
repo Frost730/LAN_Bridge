@@ -15,12 +15,13 @@ router = APIRouter(prefix="/api/pair", tags=["pair"])
 pending_pair_requests: Dict[str, dict] = {}
 
 @router.post("/code")
-async def get_or_create_pairing_code() -> Dict[str, Any]:
+async def get_or_create_pairing_code(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    creator_device_id = payload.get("device_id") if payload else None
     active = token_manager.get_current_pairing_code()
     if active:
         code, remaining = active
     else:
-        code = token_manager.generate_pairing_code()
+        code = token_manager.generate_pairing_code(owner_device_id=creator_device_id)
         remaining = settings.PAIRING_CODE_EXPIRY_SECONDS
     return {
         "code": code,
@@ -29,9 +30,10 @@ async def get_or_create_pairing_code() -> Dict[str, Any]:
     }
 
 @router.post("/token")
-async def generate_qr_pairing_token(request: Request) -> Dict[str, Any]:
+async def generate_qr_pairing_token(request: Request, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     from .routes_device import is_cloud_env
-    token = token_manager.generate_pairing_token()
+    creator_device_id = payload.get("device_id") if payload else None
+    token = token_manager.generate_pairing_token(owner_device_id=creator_device_id)
     if is_cloud_env():
         proto = request.headers.get("x-forwarded-proto", request.url.scheme)
         host = request.headers.get("x-forwarded-host", request.url.netloc)
@@ -82,6 +84,11 @@ async def request_pairing(payload: PairRequestPayload, request: Request) -> Dict
     else:
         raise HTTPException(status_code=400, detail="Pairing code or QR token required")
 
+    # If this pair was with a specific owner device, link them across networks
+    owner_id = token_manager.get_last_verified_owner()
+    if owner_id:
+        ws_manager.pair_devices(payload.device_id, owner_id)
+
     # 3. Check if host requires approval (Cloud relay auto-approves devices with valid code/token)
     require_approval = False if cloud_active else await db.get_setting("require_approval", True)
     if not require_approval:
@@ -94,6 +101,7 @@ async def request_pairing(payload: PairRequestPayload, request: Request) -> Dict
             browser=payload.browser,
             ip=client_ip
         )
+        await ws_manager.broadcast_peer_list()
         return {
             "status": "approved",
             "session_token": session_token,

@@ -112,7 +112,14 @@ async def websocket_endpoint(
     os: str = Query("unknown"),
     browser: str = Query("unknown")
 ):
-    client_ip = websocket.client.host if websocket.client else "unknown"
+    forwarded_for = websocket.headers.get("x-forwarded-for")
+    if forwarded_for:
+        client_ip = forwarded_for.split(",")[0].strip()
+    elif websocket.client:
+        client_ip = websocket.client.host
+    else:
+        client_ip = "unknown"
+
     peer = await ws_manager.connect(
         websocket=websocket,
         device_id=device_id,

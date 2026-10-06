@@ -22,15 +22,15 @@ export function useDevice() {
     }
   }, []);
 
-  // Load peers
+  // Load peers (isolated by network or pairing)
   const refreshDevices = useCallback(async () => {
     try {
-      const devices = await api.getConnectedDevices();
+      const devices = await api.getConnectedDevices(localDevice.device_id);
       setOnlineDevices(devices);
     } catch (e) {
       console.error('Failed to refresh devices:', e);
     }
-  }, []);
+  }, [localDevice.device_id]);
 
   // Update local name
   const updateName = async (newName: string) => {

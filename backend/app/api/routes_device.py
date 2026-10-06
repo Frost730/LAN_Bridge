@@ -68,10 +68,17 @@ async def update_device_name(payload: Dict[str, str]) -> Dict[str, Any]:
     return {"status": "ok", "device_name": new_name}
 
 @router.get("/devices")
-async def list_connected_devices() -> List[Dict[str, Any]]:
-    # Get active websocket devices
-    online_peers = ws_manager.get_online_devices()
-    # Enrich with trusted status from DB
+async def list_connected_devices(request: Request, device_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        client_ip = forwarded_for.split(",")[0].strip()
+    elif request.client:
+        client_ip = request.client.host
+    else:
+        client_ip = "unknown"
+
+    # Get active websocket devices isolated to same Wi-Fi/network room or explicitly paired
+    online_peers = ws_manager.get_online_devices(for_device_id=device_id, client_ip=client_ip)
     for peer in online_peers:
         peer["is_trusted"] = await db.is_trusted_device(peer["device_id"])
     return online_peers

@@ -27,8 +27,10 @@ export const api = {
       body: JSON.stringify({ device_name: name }),
     }).then((r) => handleResponse<{ status: string; device_name: string }>(r)),
 
-  getConnectedDevices: () =>
-    fetch(`${BASE_URL}/api/devices`).then((r) => handleResponse<DeviceInfo[]>(r)),
+  getConnectedDevices: (deviceId?: string) =>
+    fetch(`${BASE_URL}/api/devices${deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : ''}`).then((r) =>
+      handleResponse<DeviceInfo[]>(r)
+    ),
 
   getTrustedDevices: () =>
     fetch(`${BASE_URL}/api/devices/trusted`).then((r) => handleResponse<TrustedDevice[]>(r)),
@@ -44,13 +46,21 @@ export const api = {
     }).then((r) => handleResponse<{ status: string; disconnected: boolean }>(r)),
 
   // Pairing
-  getPairingCode: () =>
-    fetch(`${BASE_URL}/api/pair/code`, { method: 'POST' }).then((r) =>
+  getPairingCode: (deviceId?: string) =>
+    fetch(`${BASE_URL}/api/pair/code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(deviceId ? { device_id: deviceId } : {}),
+    }).then((r) =>
       handleResponse<{ code: string; formatted: string; expires_in_seconds: number }>(r)
     ),
 
-  getPairingToken: () =>
-    fetch(`${BASE_URL}/api/pair/token`, { method: 'POST' }).then((r) =>
+  getPairingToken: (deviceId?: string) =>
+    fetch(`${BASE_URL}/api/pair/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(deviceId ? { device_id: deviceId } : {}),
+    }).then((r) =>
       handleResponse<{ token: string; connect_url: string; expires_in_seconds: number }>(r)
     ),
 

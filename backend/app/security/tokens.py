@@ -11,6 +11,7 @@ class PairingCodeData:
     created_at: float
     expires_at: float
     attempts: int = 0
+    owner_device_id: Optional[str] = None
 
 @dataclass
 class PairingTokenData:
@@ -18,6 +19,7 @@ class PairingTokenData:
     created_at: float
     expires_at: float
     used: bool = False
+    owner_device_id: Optional[str] = None
 
 @dataclass
 class SessionTokenData:
@@ -33,8 +35,12 @@ class TokenManager:
         self._pairing_tokens: Dict[str, PairingTokenData] = {}
         self._active_sessions: Dict[str, SessionTokenData] = {}
         self._failed_attempts_by_ip: Dict[str, list[float]] = {}
+        self._last_verified_owner: Optional[str] = None
 
-    def generate_pairing_code(self) -> str:
+    def get_last_verified_owner(self) -> Optional[str]:
+        return self._last_verified_owner
+
+    def generate_pairing_code(self, owner_device_id: Optional[str] = None) -> str:
         """Generates a secure 6-digit temporary pairing code"""
         code = "".join(secrets.choice(string.digits) for _ in range(6))
         now = time.time()
@@ -42,7 +48,8 @@ class TokenManager:
             code=code,
             created_at=now,
             expires_at=now + settings.PAIRING_CODE_EXPIRY_SECONDS,
-            attempts=0
+            attempts=0,
+            owner_device_id=owner_device_id
         )
         return code
 
@@ -57,7 +64,7 @@ class TokenManager:
             return None
         return self._current_pairing_code.code, remaining
 
-    def generate_pairing_token(self) -> str:
+    def generate_pairing_token(self, owner_device_id: Optional[str] = None) -> str:
         """Generates a secure random pairing token for QR code"""
         token = secrets.token_urlsafe(32)
         now = time.time()
@@ -65,7 +72,8 @@ class TokenManager:
             token=token,
             created_at=now,
             expires_at=now + settings.PAIRING_TOKEN_EXPIRY_SECONDS,
-            used=False
+            used=False,
+            owner_device_id=owner_device_id
         )
         return token
 
@@ -109,10 +117,12 @@ class TokenManager:
         # Clean spaces
         clean_code = code.replace(" ", "").strip()
         if secrets.compare_digest(clean_code, self._current_pairing_code.code):
+            self._last_verified_owner = self._current_pairing_code.owner_device_id
             # Consume pairing code on success
             self._current_pairing_code = None
             return True
 
+        self._last_verified_owner = None
         self.record_failed_attempt(ip)
         return False
 
@@ -120,13 +130,16 @@ class TokenManager:
         """Verifies a QR code pairing token"""
         data = self._pairing_tokens.get(token)
         if not data:
+            self._last_verified_owner = None
             return False
         now = time.time()
         if now > data.expires_at or data.used:
             self._pairing_tokens.pop(token, None)
+            self._last_verified_owner = None
             return False
         # Invalidate after one-time verification
         data.used = True
+        self._last_verified_owner = data.owner_device_id
         return True
 
     def create_session(self, device_id: str, device_name: str) -> str:
