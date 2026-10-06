@@ -124,7 +124,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             </p>
           </div>
 
-          {onUnpairSelf && (
+          {onUnpairSelf && (hostDevice?.is_cloud || (hostDevice && localDevice.device_id !== hostDevice.device_id)) && (
             <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">

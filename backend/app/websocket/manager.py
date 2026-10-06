@@ -186,6 +186,10 @@ class ConnectionManager:
                 pass
             self._connections.pop(ws, None)
         self._device_websockets.pop(device_id, None)
+        # Clean up any paired links
+        self._paired_links.pop(device_id, None)
+        for s in self._paired_links.values():
+            s.discard(device_id)
         await self.broadcast_peer_list()
         return True
 

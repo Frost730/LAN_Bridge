@@ -111,6 +111,7 @@ export function useDevice() {
         await api.disconnectDevice(localDevice.device_id, true);
       } catch {}
       localStorage.removeItem('lanbridge_session_token');
+      localStorage.removeItem('lanbridge_device_id');
       wsClient.disconnect();
       setPairStatus('idle');
       window.location.reload();
