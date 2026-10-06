@@ -1,10 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { DeviceInfo } from '../types';
 import { getLocalDeviceInfo, setLocalDeviceName } from '../utils/deviceDetection';
 import { api } from '../services/api';
 import { wsClient } from '../services/websocket';
 
-export function useDevice() {
+export function useDevice(onNotification?: (title: string, body?: string) => void) {
+  const onNotificationRef = useRef(onNotification);
+  useEffect(() => {
+    onNotificationRef.current = onNotification;
+  });
+
   const [localDevice, setLocalDevice] = useState<DeviceInfo>(getLocalDeviceInfo);
   const [hostDevice, setHostDevice] = useState<DeviceInfo | null>(null);
   const [onlineDevices, setOnlineDevices] = useState<DeviceInfo[]>([]);
@@ -121,6 +126,12 @@ export function useDevice() {
     const unsubPairReq = wsClient.on('pair_request', (data) => {
       if (data.device) {
         setPendingPairRequest(data.device);
+        if (onNotificationRef.current) {
+          onNotificationRef.current(
+            'Pairing Request 🔑',
+            `${data.device.device_name} wants to connect with your device`
+          );
+        }
       }
     });
 
@@ -129,6 +140,12 @@ export function useDevice() {
         setPairStatus('approved');
         if (data.session_token) {
           localStorage.setItem('lanbridge_session_token', data.session_token);
+        }
+        if (onNotificationRef.current) {
+          onNotificationRef.current(
+            'Device Paired ✓',
+            'Successfully connected to LANBridge'
+          );
         }
       }
     });

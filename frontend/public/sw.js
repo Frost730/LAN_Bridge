@@ -1,8 +1,10 @@
-const CACHE_NAME = 'lanbridge-v1';
+const CACHE_NAME = 'lanbridge-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/logo.svg',
+  '/app-icon.png',
+  '/icon-192.png',
+  '/favicon.ico',
   '/manifest.webmanifest'
 ];
 
@@ -24,6 +26,23 @@ self.addEventListener('activate', (event) => {
     })
   );
   self.clients.claim();
+});
+
+// Handle notification click: bring active LANBridge tab to focus
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow('/');
+      }
+    })
+  );
 });
 
 self.addEventListener('fetch', (event) => {

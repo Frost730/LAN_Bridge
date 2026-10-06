@@ -6,6 +6,7 @@ import { calculateFileSHA256 } from '../utils/hashing';
 import { webrtcManager } from '../services/webrtc';
 import { getTransferConfig } from '../utils/transferSettings';
 import { SpeedCalculator } from '../utils/speed';
+import { formatBytes } from '../utils/formatters';
 
 export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: string, body?: string) => void) {
   const [transfers, setTransfers] = useState<TransferItem[]>([]);
@@ -157,7 +158,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
           if (onNotificationRef.current) {
             onNotificationRef.current(
               `Incoming Transfer from ${data.transfer.sender_name}`,
-              `${data.transfer.files.length} file(s) (${Math.round(data.transfer.total_size / 1024 / 1024)} MB)`
+              `${data.transfer.files.length} file(s) (${formatBytes(data.transfer.total_size)})`
             );
           }
         }

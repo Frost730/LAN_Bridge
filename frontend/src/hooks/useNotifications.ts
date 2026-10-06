@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 export function useNotifications() {
   const [permission, setPermission] = useState<NotificationPermission>('default');
@@ -9,7 +9,7 @@ export function useNotifications() {
     }
   }, []);
 
-  const requestPermission = async (): Promise<boolean> => {
+  const requestPermission = useCallback(async (): Promise<boolean> => {
     if (!('Notification' in window)) return false;
     try {
       const res = await Notification.requestPermission();
@@ -18,22 +18,41 @@ export function useNotifications() {
     } catch {
       return false;
     }
-  };
+  }, []);
 
-  const notify = (title: string, options?: NotificationOptions) => {
+  const notify = useCallback((title: string, options?: NotificationOptions) => {
     if (!('Notification' in window)) return;
     if (Notification.permission === 'granted') {
-      try {
-        new Notification(title, {
-          icon: '/logo.svg',
-          badge: '/logo.svg',
-          ...options,
-        });
-      } catch {
-        // Fallback
+      const notificationOptions: NotificationOptions = {
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        silent: false,
+        ...options,
+      };
+      (notificationOptions as Record<string, unknown>).vibrate = [150, 80, 150];
+
+      // Service worker showNotification delivers reliably in background and on mobile devices
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.ready
+          .then((registration) => {
+            registration.showNotification(title, notificationOptions);
+          })
+          .catch(() => {
+            try {
+              new Notification(title, notificationOptions);
+            } catch {
+              // Ignore
+            }
+          });
+      } else {
+        try {
+          new Notification(title, notificationOptions);
+        } catch {
+          // Fallback
+        }
       }
     }
-  };
+  }, []);
 
   return { permission, requestPermission, notify };
 }

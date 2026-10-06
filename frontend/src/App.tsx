@@ -23,6 +23,12 @@ import { DeviceInfo } from './types';
 export function App() {
   const { theme, setTheme } = useTheme();
   const { notify, requestPermission } = useNotifications();
+
+  const handleNotification = React.useCallback(
+    (title: string, body?: string) => notify(title, { body }),
+    [notify]
+  );
+
   const {
     localDevice,
     hostDevice,
@@ -35,12 +41,7 @@ export function App() {
     setPendingPairRequest,
     updateName,
     unpairSelf,
-  } = useDevice();
-
-  const handleNotification = React.useCallback(
-    (title: string, body?: string) => notify(title, { body }),
-    [notify]
-  );
+  } = useDevice(handleNotification);
 
   const {
     transfers,
