@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 import os
+from typing import Optional
 
 if getattr(sys, "frozen", False):
     # PyInstaller extracts bundled assets to sys._MEIPASS
