@@ -23,6 +23,7 @@ interface DashboardProps {
   onCancelTransfer: (id: string) => void;
   onOpenConnect: () => void;
   onLeaveRoom?: () => void;
+  onChatWithDevice?: (device: DeviceInfo) => void;
   onNavigateTab: (tab: any) => void;
 }
 
@@ -37,6 +38,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onCancelTransfer,
   onOpenConnect,
   onLeaveRoom,
+  onChatWithDevice,
   onNavigateTab,
 }) => {
   const [selectedFiles, setSelectedFiles] = useState<Array<{ file: File; relativePath: string }> | null>(null);
@@ -163,6 +165,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <DeviceCard
                   key={device.device_id}
                   device={device}
+                  onChatWithDevice={onChatWithDevice}
                   onSendToDevice={(d) => {
                     // Trigger native file picker for direct sending
                     const input = document.createElement('input');

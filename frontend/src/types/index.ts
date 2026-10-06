@@ -112,3 +112,15 @@ export interface DiagnosticsData {
   is_https: boolean;
   is_cloud?: boolean;
 }
+
+export interface ChatMessage {
+  id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_type?: string;
+  target_id?: string;
+  target_name?: string;
+  text: string;
+  timestamp: number;
+  is_self?: boolean;
+}

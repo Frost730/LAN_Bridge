@@ -158,6 +158,12 @@ async def websocket_endpoint(
                     await ws_manager.broadcast_peer_list()
                     continue
 
+                # Handle peer-to-peer / room chat messages
+                if msg_type == "chat_message":
+                    msg["from_device_id"] = device_id
+                    await ws_manager.send_chat_message(device_id, msg)
+                    continue
+
                 target_id = msg.get("target_device_id")
                 if target_id:
                     msg["from_device_id"] = device_id

@@ -1,14 +1,20 @@
 import React from 'react';
-import { Smartphone, Monitor, Tablet, Laptop, Send, ShieldCheck, Wifi, Unplug } from 'lucide-react';
+import { Smartphone, Monitor, Tablet, Laptop, Send, ShieldCheck, Wifi, Unplug, MessageSquare } from 'lucide-react';
 import { DeviceInfo } from '../types';
 
 interface DeviceCardProps {
   device: DeviceInfo;
   onSendToDevice: (device: DeviceInfo) => void;
+  onChatWithDevice?: (device: DeviceInfo) => void;
   onDisconnect?: (device: DeviceInfo) => void;
 }
 
-export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onSendToDevice, onDisconnect }) => {
+export const DeviceCard: React.FC<DeviceCardProps> = ({
+  device,
+  onSendToDevice,
+  onChatWithDevice,
+  onDisconnect,
+}) => {
   const renderIcon = (type: string) => {
     switch (type) {
       case 'phone':
@@ -52,6 +58,18 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({ device, onSendToDevice, 
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5" />
           Ready
         </span>
+
+        {onChatWithDevice && (
+          <button
+            type="button"
+            onClick={() => onChatWithDevice(device)}
+            className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900/60 text-purple-600 dark:text-purple-400 text-xs font-semibold border border-purple-200 dark:border-purple-800 transition-colors"
+            title="Chat with this device"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Chat</span>
+          </button>
+        )}
 
         <button
           type="button"

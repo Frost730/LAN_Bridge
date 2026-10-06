@@ -213,6 +213,48 @@ class ConnectionManager:
             await self.disconnect(ws)
         return sent_any
 
+    async def send_chat_message(self, from_device_id: str, message: dict) -> None:
+        """
+        Routes a chat message either to a specific target_device_id, or broadcasts to the
+        sender's visible peers (same room or same network).
+        """
+        target_device_id = message.get("target_device_id")
+        if target_device_id and target_device_id not in ("all", "*"):
+            await self.send_to_device(target_device_id, message)
+            return
+
+        viewer_custom_room = self.get_device_room(from_device_id)
+        sender_peer = None
+        for p in self._connections.values():
+            if p.device_id == from_device_id:
+                sender_peer = p
+                break
+
+        from ..api.routes_device import is_cloud_env
+        cloud_active = is_cloud_env()
+        paired = self._paired_links.get(from_device_id, set())
+
+        sent_to = set()
+        for peer in self._connections.values():
+            if peer.device_id == from_device_id or peer.device_id in sent_to:
+                continue
+            peer_custom_room = self.get_device_room(peer.device_id)
+
+            # 1. Custom room check
+            if viewer_custom_room:
+                if peer_custom_room == viewer_custom_room:
+                    await self.send_to_device(peer.device_id, message)
+                    sent_to.add(peer.device_id)
+                continue
+
+            if peer_custom_room:
+                continue
+
+            # 2. Network room or paired
+            if not cloud_active or (sender_peer and peer.network_room == sender_peer.network_room) or (peer.device_id in paired):
+                await self.send_to_device(peer.device_id, message)
+                sent_to.add(peer.device_id)
+
     async def send_to_host(self, message: dict) -> bool:
         if self._host_device_id:
             return await self.send_to_device(self._host_device_id, message)

@@ -8,6 +8,7 @@ import { HistoryPage } from './pages/HistoryPage';
 import { ConnectPage } from './pages/ConnectPage';
 import { DiagnosticsPage } from './pages/DiagnosticsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ChatPage } from './pages/ChatPage';
 import { IncomingTransferModal } from './components/IncomingTransferModal';
 import { NewDeviceApprovalModal } from './components/NewDeviceApprovalModal';
 
@@ -15,7 +16,9 @@ import { useTheme } from './hooks/useTheme';
 import { useNotifications } from './hooks/useNotifications';
 import { useDevice } from './hooks/useDevice';
 import { useTransfers } from './hooks/useTransfers';
+import { useChat } from './hooks/useChat';
 import { api } from './services/api';
+import { DeviceInfo } from './types';
 
 export function App() {
   const { theme, setTheme } = useTheme();
@@ -52,6 +55,30 @@ export function App() {
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+
+  const isChatActive = currentTab === 'chat';
+  const {
+    messages: chatMessages,
+    unreadCount: unreadChatCount,
+    selectedTargetId: chatTargetId,
+    setSelectedTargetId: setChatTargetId,
+    sendMessage: sendChatMessage,
+    markAsRead: markChatAsRead,
+    clearMessages: clearChatMessages,
+  } = useChat(localDevice, isChatActive, handleNotification);
+
+  const handleTabChange = (tab: NavTab) => {
+    if (tab === 'chat') {
+      markChatAsRead();
+    }
+    setCurrentTab(tab);
+  };
+
+  const handleChatWithDevice = (device: DeviceInfo) => {
+    setChatTargetId(device.device_id);
+    markChatAsRead();
+    setCurrentTab('chat');
+  };
 
   // Check URL parameters for QR scan token: /?pair=<token>
   useEffect(() => {
@@ -126,8 +153,9 @@ export function App() {
       {/* Navigation (Desktop Tabs & Mobile Bar) */}
       <Navigation
         currentTab={currentTab}
-        onTabChange={setCurrentTab}
+        onTabChange={handleTabChange}
         activeTransferCount={activeTransfersCount}
+        unreadChatCount={unreadChatCount}
       />
 
       {/* Main Content Area */}
@@ -144,7 +172,8 @@ export function App() {
             onCancelTransfer={cancelTransfer}
             onOpenConnect={() => setIsConnectModalOpen(true)}
             onLeaveRoom={leaveRoom}
-            onNavigateTab={setCurrentTab}
+            onChatWithDevice={handleChatWithDevice}
+            onNavigateTab={handleTabChange}
           />
         )}
 
@@ -153,9 +182,23 @@ export function App() {
             onlineDevices={onlineDevices}
             onSendToDevice={(device) => {
               // Switch to dashboard with file picker or prompt
-              setCurrentTab('dashboard');
+              handleTabChange('dashboard');
             }}
+            onChatWithDevice={handleChatWithDevice}
             onOpenConnect={() => setIsConnectModalOpen(true)}
+          />
+        )}
+
+        {currentTab === 'chat' && (
+          <ChatPage
+            localDevice={localDevice}
+            onlineDevices={onlineDevices}
+            currentRoom={currentRoom}
+            messages={chatMessages}
+            selectedTargetId={chatTargetId}
+            onSelectTargetId={setChatTargetId}
+            onSendMessage={sendChatMessage}
+            onClearMessages={clearChatMessages}
           />
         )}
 

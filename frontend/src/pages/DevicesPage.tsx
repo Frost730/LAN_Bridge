@@ -9,12 +9,14 @@ import { formatTimestamp } from '../utils/formatters';
 interface DevicesPageProps {
   onlineDevices: DeviceInfo[];
   onSendToDevice: (device: DeviceInfo) => void;
+  onChatWithDevice?: (device: DeviceInfo) => void;
   onOpenConnect: () => void;
 }
 
 export const DevicesPage: React.FC<DevicesPageProps> = ({
   onlineDevices,
   onSendToDevice,
+  onChatWithDevice,
   onOpenConnect,
 }) => {
   const [trustedDevices, setTrustedDevices] = useState<TrustedDevice[]>([]);
@@ -100,6 +102,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
               <DeviceCard
                 key={device.device_id}
                 device={device}
+                onChatWithDevice={onChatWithDevice}
                 onSendToDevice={onSendToDevice}
                 onDisconnect={handleDisconnectDevice}
               />
