@@ -5,6 +5,7 @@ import { api } from '../services/api';
 import { Theme } from '../hooks/useTheme';
 
 interface SettingsPageProps {
+  localDevice: DeviceInfo;
   currentTheme: Theme;
   onThemeChange: (theme: Theme) => void;
   onUpdateDeviceName: (name: string) => void;
@@ -12,13 +13,15 @@ interface SettingsPageProps {
 }
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({
+  localDevice,
   currentTheme,
   onThemeChange,
   onUpdateDeviceName,
   onUnpairSelf,
 }) => {
+  const [deviceName, setDeviceName] = useState(localDevice.device_name);
   const [settings, setSettings] = useState<AppSettings>({
-    device_name: '',
+    device_name: localDevice.device_name,
     server_port: 8000,
     require_approval: true,
     concurrent_transfers: 3,
@@ -32,6 +35,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isRestarting, setIsRestarting] = useState(false);
+
+  useEffect(() => {
+    setDeviceName(localDevice.device_name);
+  }, [localDevice.device_name]);
 
   useEffect(() => {
     const load = async () => {
@@ -54,8 +61,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.updateSettings(settings);
-      onUpdateDeviceName(settings.device_name);
+      const trimmedName = deviceName.trim();
+      if (trimmedName && trimmedName !== localDevice.device_name) {
+        onUpdateDeviceName(trimmedName);
+      }
+
+      const isCloud = hostDevice?.is_cloud;
+      const isHost = hostDevice && localDevice.device_id === hostDevice.device_id;
+
+      const payload = {
+        ...settings,
+        device_name: (!isCloud && isHost) ? trimmedName : settings.device_name,
+      };
+
+      await api.updateSettings(payload);
       onThemeChange(settings.theme);
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2500);
@@ -87,14 +106,22 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              Device Name (Broadcasted on LAN)
+              {hostDevice?.is_cloud
+                ? 'Your Device Name (Visible to Connected Peers)'
+                : 'Device Name (Visible on Local Network)'}
             </label>
             <input
               type="text"
-              value={settings.device_name}
-              onChange={(e) => setSettings({ ...settings, device_name: e.target.value })}
+              value={deviceName}
+              onChange={(e) => setDeviceName(e.target.value)}
+              placeholder="e.g., My Laptop, Pixel 8"
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
+            <p className="text-[11px] text-slate-500 mt-1.5">
+              {hostDevice?.is_cloud
+                ? 'This name identifies your device when sending or receiving files through the cloud relay.'
+                : 'Broadcasted via mDNS to nearby devices on your Wi-Fi / LAN.'}
+            </p>
           </div>
 
           {onUnpairSelf && (
@@ -127,22 +154,36 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             </h3>
           </div>
 
-          <label className="flex items-center justify-between cursor-pointer">
-            <div>
-              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
-                Require Manual Approval for New Devices
-              </span>
-              <span className="text-[11px] text-slate-500">
-                Untrusted devices must be accepted on the host screen before transferring.
-              </span>
+          {hostDevice?.is_cloud ? (
+            <div className="flex items-start space-x-3 p-3.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-900/40">
+              <Shield className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="text-xs font-semibold text-emerald-950 dark:text-emerald-200 block">
+                  End-to-End Transfer Confirmation
+                </span>
+                <span className="text-[11px] text-emerald-800/80 dark:text-emerald-300/80 block leading-relaxed">
+                  Incoming file transfers require explicit confirmation on your device before downloading. Direct P2P signaling is active and files are never stored in the cloud.
+                </span>
+              </div>
             </div>
-            <input
-              type="checkbox"
-              checked={settings.require_approval}
-              onChange={(e) => setSettings({ ...settings, require_approval: e.target.checked })}
-              className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500"
-            />
-          </label>
+          ) : (
+            <label className="flex items-center justify-between cursor-pointer">
+              <div>
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
+                  Require Manual Approval for New Devices
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Untrusted devices must be accepted on the host screen before transferring.
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={settings.require_approval}
+                onChange={(e) => setSettings({ ...settings, require_approval: e.target.checked })}
+                className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500"
+              />
+            </label>
+          )}
         </div>
 
         {/* Transfer & Performance */}

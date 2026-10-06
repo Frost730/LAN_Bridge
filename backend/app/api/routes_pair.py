@@ -48,7 +48,9 @@ async def generate_qr_pairing_token(request: Request) -> Dict[str, Any]:
 
 @router.post("/request")
 async def request_pairing(payload: PairRequestPayload, request: Request) -> Dict[str, Any]:
-    client_ip = request.client.host if request.client else "unknown"
+    from .routes_device import is_cloud_env
+    cloud_active = is_cloud_env()
+    client_ip = "Protected" if cloud_active else (request.client.host if request.client else "unknown")
 
     # 1. Check if device is already trusted
     if await db.is_trusted_device(payload.device_id):
@@ -80,8 +82,8 @@ async def request_pairing(payload: PairRequestPayload, request: Request) -> Dict
     else:
         raise HTTPException(status_code=400, detail="Pairing code or QR token required")
 
-    # 3. Check if host requires approval
-    require_approval = await db.get_setting("require_approval", True)
+    # 3. Check if host requires approval (Cloud relay auto-approves devices with valid code/token)
+    require_approval = False if cloud_active else await db.get_setting("require_approval", True)
     if not require_approval:
         session_token = token_manager.create_session(payload.device_id, payload.device_name)
         await db.upsert_device(

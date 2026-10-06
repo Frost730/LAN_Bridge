@@ -1,4 +1,5 @@
 import os
+import sys
 import socket
 import platform
 from fastapi import APIRouter, Request, HTTPException
@@ -20,10 +21,21 @@ def is_cloud_env() -> bool:
 
 @router.get("/device")
 async def get_host_device(request: Request) -> Dict[str, Any]:
-    saved_name = await db.get_setting("device_name", None)
-    if not saved_name:
-        saved_name = socket.gethostname() or "LANBridge-Host"
-        await db.set_setting("device_name", saved_name)
+    cloud_active = is_cloud_env()
+    
+    if cloud_active:
+        saved_name = "Cloud Relay Host"
+        os_display = "Cloud Platform"
+        browser_display = "Cloud Relay"
+        primary_ip = "Protected"
+    else:
+        saved_name = await db.get_setting("device_name", None)
+        if not saved_name or saved_name.startswith("srv-"):
+            saved_name = socket.gethostname() or "LANBridge-Host"
+            await db.set_setting("device_name", saved_name)
+        os_display = platform.system()
+        browser_display = "Host Server"
+        primary_ip = get_primary_lan_ip()
 
     host_id = await db.get_setting("host_device_id", None)
     if not host_id:
@@ -32,15 +44,13 @@ async def get_host_device(request: Request) -> Dict[str, Any]:
         await db.set_setting("host_device_id", host_id)
 
     ws_manager.set_host_device_id(host_id)
-    primary_ip = get_primary_lan_ip()
-    cloud_active = is_cloud_env()
 
     return {
         "device_id": host_id,
         "device_name": saved_name,
         "device_type": "desktop",
-        "os": platform.system(),
-        "browser": "Host Server",
+        "os": os_display,
+        "browser": browser_display,
         "ip_address": primary_ip,
         "is_host": True,
         "online": True,
@@ -86,10 +96,17 @@ async def disconnect_device(device_id: str, untrust: bool = False) -> Dict[str, 
 
 @router.get("/settings")
 async def get_settings() -> Dict[str, Any]:
+    cloud_active = is_cloud_env()
+    default_name = "Cloud Relay Host" if cloud_active else socket.gethostname()
+    saved_name = await db.get_setting("device_name", default_name)
+    if cloud_active and (saved_name.startswith("srv-") or "hibernate" in saved_name):
+        saved_name = "Cloud Relay Host"
+        await db.set_setting("device_name", saved_name)
+
     return {
-        "device_name": await db.get_setting("device_name", socket.gethostname()),
-        "server_port": await db.get_setting("server_port", 8000),
-        "require_approval": await db.get_setting("require_approval", True),
+        "device_name": saved_name,
+        "server_port": 443 if cloud_active else await db.get_setting("server_port", 8000),
+        "require_approval": False if cloud_active else await db.get_setting("require_approval", True),
         "concurrent_transfers": await db.get_setting("concurrent_transfers", 3),
         "chunk_size": await db.get_setting("chunk_size", 2097152),
         "performance_mode": await db.get_setting("performance_mode", False),
@@ -99,7 +116,10 @@ async def get_settings() -> Dict[str, Any]:
 
 @router.put("/settings")
 async def update_settings(new_settings: Dict[str, Any]) -> Dict[str, Any]:
+    cloud_active = is_cloud_env()
     for k, v in new_settings.items():
+        if cloud_active and k in ("device_name", "server_port"):
+            continue
         await db.set_setting(k, v)
     return {"status": "ok"}
 

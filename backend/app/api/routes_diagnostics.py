@@ -56,12 +56,17 @@ async def get_diagnostics(request: Request) -> Dict[str, Any]:
         python_display = platform.python_version()
         discovered_mdns = mdns_manager.get_discovered_hosts()
 
-    hostname = socket.gethostname()
-    device_name = await db.get_setting("device_name", hostname)
+    if cloud_active:
+        hostname = "Cloud Edge Gateway"
+        device_name = "Cloud Relay Host"
+        primary_ip = "Protected"
+    else:
+        hostname = socket.gethostname()
+        device_name = await db.get_setting("device_name", hostname)
 
     return {
         "device_name": device_name,
-        "hostname": "Cloud Host" if cloud_active else hostname,
+        "hostname": hostname,
         "host_ip": primary_ip,
         "server_port": port_num,
         "interfaces": interfaces,

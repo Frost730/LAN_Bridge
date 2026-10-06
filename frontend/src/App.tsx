@@ -168,6 +168,7 @@ export function App() {
 
         {currentTab === 'settings' && (
           <SettingsPage
+            localDevice={localDevice}
             currentTheme={theme}
             onThemeChange={setTheme}
             onUpdateDeviceName={updateName}
