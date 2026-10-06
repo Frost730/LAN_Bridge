@@ -54,6 +54,7 @@ class Settings:
         "AUTO_DELETE_ON_DOWNLOAD",
         "true" if is_cloud_env() else "false"
     ).lower() in ("true", "1", "yes")
+    AUTO_DELETE_DELAY_SECONDS: int = int(os.getenv("AUTO_DELETE_DELAY_SECONDS", "180"))
     AUTO_CLEANUP_HOURS: int = int(os.getenv("AUTO_CLEANUP_HOURS", "1"))
 
     def ensure_directories(self) -> None:

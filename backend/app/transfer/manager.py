@@ -162,6 +162,9 @@ class TransferManager:
             # Create or open temp file
             if not temp_path.exists():
                 temp_path.touch()
+            # If empty file (0 bytes), finalize immediately so it can be saved/downloaded
+            if f.size == 0:
+                self._finalize_empty_file(session, f)
         return True
 
     def reject_transfer(self, transfer_id: str) -> bool:
@@ -221,8 +224,11 @@ class TransferManager:
         session.completed_at = time.time()
         session.transport = transport
         for f in session.files.values():
-            f.status = FileTransferState.COMPLETED
-            f.bytes_received = f.size
+            if f.size == 0 and not f.final_filepath:
+                self._finalize_empty_file(session, f)
+            else:
+                f.status = FileTransferState.COMPLETED
+                f.bytes_received = f.size
         # Record in SQLite history
         try:
             filename = session.root_name if session.is_folder else (list(session.files.values())[0].filename if session.files else "file")
@@ -259,6 +265,10 @@ class TransferManager:
         file_obj = session.files.get(file_id)
         if not file_obj:
             return False, "File not found in transfer"
+
+        # If file is already finalized (e.g. 0-byte file finalized immediately on accept)
+        if file_obj.status == FileTransferState.COMPLETED or (file_obj.final_filepath and os.path.exists(file_obj.final_filepath)):
+            return True, None
 
         if not file_obj.temp_filepath:
             temp_path = settings.TEMP_DIR / f"{session.transfer_id}_{file_obj.file_id}.part"
@@ -356,6 +366,37 @@ class TransferManager:
             file_obj.error_message = f"Failed to save file: {str(e)}"
             logger.error(f"Error finalizing file {file_obj.filename}: {e}", exc_info=True)
             return False, file_obj.error_message
+
+    def _finalize_empty_file(self, session: TransferSession, file_obj: ActiveFile) -> bool:
+        """Immediately materializes and finalizes a 0-byte file into RECEIVED_DIR"""
+        try:
+            if session.is_folder:
+                safe_root = sanitize_filename(session.root_name)
+                combined_rel = f"{safe_root}/{file_obj.relative_path}"
+                dest_path = sanitize_relative_path(combined_rel, settings.RECEIVED_DIR)
+            else:
+                dest_path = sanitize_relative_path(file_obj.filename, settings.RECEIVED_DIR)
+
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            final_path = get_unique_destination_path(dest_path)
+            final_path.touch()
+
+            file_obj.final_filepath = str(final_path)
+            file_obj.sha256_actual = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            file_obj.bytes_received = 0
+            file_obj.status = FileTransferState.COMPLETED
+            logger.info(f"Empty file finalized: {file_obj.filename} -> {final_path}")
+
+            # If all files completed, mark session completed
+            if all(f.status == FileTransferState.COMPLETED for f in session.files.values()):
+                session.status = TransferState.COMPLETED
+                session.completed_at = time.time()
+            return True
+        except Exception as e:
+            file_obj.status = FileTransferState.FAILED
+            file_obj.error_message = f"Failed to save empty file: {str(e)}"
+            logger.error(f"Error finalizing empty file {file_obj.filename}: {e}", exc_info=True)
+            return False
 
     def cleanup_temp_files(self, session: TransferSession) -> None:
         """Removes incomplete temporary files for cancelled transfers"""

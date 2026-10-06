@@ -3,6 +3,7 @@ import io
 import uuid
 import zipfile
 import logging
+import asyncio
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Request, HTTPException, Query, Header, BackgroundTasks
@@ -189,9 +190,16 @@ async def upload_chunk(
     offset: int = Query(...)
 ) -> Dict[str, Any]:
     # Stream raw binary bytes directly without memory duplication
+    session = transfer_manager.get_transfer(transfer_id)
+    file_obj = session.files.get(file_id) if session else None
+
     body = await request.body()
-    if not body:
+    if not body and not (file_obj and file_obj.size == 0):
         raise HTTPException(status_code=400, detail="Empty chunk payload")
+
+    # If empty file and not yet materialized, finalize it
+    if session and file_obj and file_obj.size == 0 and not file_obj.final_filepath:
+        transfer_manager._finalize_empty_file(session, file_obj)
 
     success, error = await transfer_manager.write_chunk(
         transfer_id=transfer_id,
@@ -239,15 +247,18 @@ async def upload_chunk(
         "transfer_completed": session.status == TransferState.COMPLETED if session else False
     }
 
-def delete_file_safely(file_path: str):
+async def delete_file_safely(file_path: str, delay_seconds: int = 180):
     """
-    Safely unlinks/destroys ephemeral files from disk after transfer stream finishes.
-    Also cleans up empty parent directories within settings.RECEIVED_DIR.
+    Safely unlinks/destroys ephemeral files from disk after transfer stream finishes
+    and a grace period has passed (settings.AUTO_DELETE_DELAY_SECONDS) to prevent
+    race conditions with browser HEAD requests, range inspection, or chunk retries.
     """
     try:
+        if delay_seconds > 0:
+            await asyncio.sleep(delay_seconds)
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
-            logger.info(f"Ephemeral privacy: safely deleted {file_path} after download.")
+            logger.info(f"Ephemeral privacy: safely deleted {file_path} after {delay_seconds}s grace period.")
             p = Path(file_path).parent
             received_p = Path(settings.RECEIVED_DIR).resolve()
             while p.resolve() != received_p and p.exists():
@@ -268,18 +279,57 @@ async def should_auto_delete() -> bool:
     return bool(await db.get_setting("auto_delete_on_download", False))
 
 @router.get("/{transfer_id}/files/{file_id}/download")
-async def download_single_file(transfer_id: str, file_id: str, background_tasks: BackgroundTasks):
+@router.get("/{transfer_id}/download")
+async def download_file(
+    transfer_id: str,
+    background_tasks: BackgroundTasks,
+    file_id: Optional[str] = None
+):
     session = transfer_manager.get_transfer(transfer_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Transfer not found")
+        # Check DB history fallback if container restarted
+        history = await db.get_history(limit=50)
+        matched = next((h for h in history if h.get("transfer_id") == transfer_id), None)
+        if matched:
+            cand = settings.RECEIVED_DIR / matched["filename"]
+            if cand.exists():
+                if await should_auto_delete():
+                    background_tasks.add_task(delete_file_safely, str(cand), settings.AUTO_DELETE_DELAY_SECONDS)
+                return FileResponse(
+                    path=str(cand),
+                    filename=matched["filename"],
+                    media_type="application/octet-stream"
+                )
+        raise HTTPException(status_code=404, detail="Transfer not found or expired")
 
-    file_obj = session.files.get(file_id)
-    if not file_obj or not file_obj.final_filepath or not os.path.exists(file_obj.final_filepath):
-        raise HTTPException(status_code=404, detail="File not ready or does not exist")
+    file_obj = None
+    if file_id:
+        file_obj = session.files.get(file_id)
+    if not file_obj and len(session.files) == 1:
+        file_obj = list(session.files.values())[0]
+
+    # If it's a folder or multi-file transfer and no single file requested, redirect to zip download
+    if not file_obj and (session.is_folder or len(session.files) > 1):
+        return await download_transfer_zip(transfer_id, background_tasks)
+
+    if not file_obj:
+        raise HTTPException(status_code=404, detail="File not found in transfer")
+
+    # If empty file and final_filepath not set yet, finalize it now
+    if file_obj.size == 0 and not file_obj.final_filepath:
+        transfer_manager._finalize_empty_file(session, file_obj)
+
+    if not file_obj.final_filepath or not os.path.exists(file_obj.final_filepath):
+        # As last check, verify if filename exists in settings.RECEIVED_DIR
+        cand = settings.RECEIVED_DIR / file_obj.filename
+        if cand.exists():
+            file_obj.final_filepath = str(cand)
+        else:
+            raise HTTPException(status_code=404, detail="File not ready or does not exist")
 
     filepath = file_obj.final_filepath
     if await should_auto_delete():
-        background_tasks.add_task(delete_file_safely, filepath)
+        background_tasks.add_task(delete_file_safely, filepath, settings.AUTO_DELETE_DELAY_SECONDS)
 
     return FileResponse(
         path=filepath,
@@ -312,7 +362,7 @@ async def download_transfer_zip(transfer_id: str, background_tasks: BackgroundTa
 
     if await should_auto_delete():
         for fp in files_to_delete:
-            background_tasks.add_task(delete_file_safely, fp)
+            background_tasks.add_task(delete_file_safely, fp, settings.AUTO_DELETE_DELAY_SECONDS)
 
     return StreamingResponse(
         zip_buffer,

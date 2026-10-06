@@ -21,6 +21,7 @@ async def test_auto_delete_on_single_file_download(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "RECEIVED_DIR", received_dir)
     monkeypatch.setattr(settings, "TEMP_DIR", temp_dir)
     monkeypatch.setattr(settings, "AUTO_DELETE_ON_DOWNLOAD", True)
+    monkeypatch.setattr(settings, "AUTO_DELETE_DELAY_SECONDS", 0)
     monkeypatch.setattr(db, "db_path", tmp_path / "test_autodel.db")
     await db.init_db()
 
@@ -113,6 +114,7 @@ async def test_auto_delete_on_zip_download(tmp_path, monkeypatch):
     
     monkeypatch.setattr(settings, "RECEIVED_DIR", received_dir)
     monkeypatch.setattr(settings, "AUTO_DELETE_ON_DOWNLOAD", True)
+    monkeypatch.setattr(settings, "AUTO_DELETE_DELAY_SECONDS", 0)
     monkeypatch.setattr(db, "db_path", tmp_path / "test_zipdel.db")
     await db.init_db()
 

@@ -84,24 +84,6 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
         );
       },
       (transfer_id, file_id, filename, relative_path, blob, sha256_verified) => {
-        // Prevent downloading corrupted or empty blobs
-        if (blob.size === 0) {
-          console.warn(`[WebRTC] Received 0-byte blob for ${filename}`);
-          setTransfers((prev) =>
-            prev.map((t) =>
-              t.transfer_id === transfer_id
-                ? {
-                    ...t,
-                    status: 'failed',
-                    error_message: 'Received empty file',
-                    transport: 'webrtc',
-                  }
-                : t
-            )
-          );
-          return;
-        }
-
         // Trigger browser save / download
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -209,10 +191,10 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       const targetDeviceId = files[0].targetDeviceId;
 
       try {
-        // 1. Try WebRTC P2P DataChannel connection first
+        // 1. Try WebRTC P2P DataChannel connection first (6.5s timeout for mobile/cross-network ICE gathering)
         let webrtcSuccess = false;
         try {
-          const channel = await webrtcManager.connectToPeer(targetDeviceId, 2500);
+          const channel = await webrtcManager.connectToPeer(targetDeviceId, 6500);
           if (channel && channel.readyState === 'open') {
             const ctrl = activeControlRef.current.get(transferId) || { paused: false, cancelled: false };
             if (ctrl.cancelled) {

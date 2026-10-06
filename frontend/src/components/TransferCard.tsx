@@ -121,9 +121,11 @@ export const TransferCard: React.FC<TransferCardProps> = ({
           {isCompleted && (
             <a
               href={
-                transfer.is_folder || transfer.files.length > 1
+                transfer.is_folder || (transfer.files && transfer.files.length > 1)
                   ? `/api/transfers/${transfer.transfer_id}/download-zip`
-                  : `/api/transfers/${transfer.transfer_id}/files/${transfer.files[0]?.file_id}/download`
+                  : transfer.files?.[0]?.file_id
+                  ? `/api/transfers/${transfer.transfer_id}/files/${transfer.files[0].file_id}/download`
+                  : `/api/transfers/${transfer.transfer_id}/download`
               }
               download
               className="flex items-center space-x-1 px-3 py-1.5 min-h-[36px] rounded-lg bg-brand-50 hover:bg-brand-100 dark:bg-brand-950/60 dark:hover:bg-brand-900/60 text-brand-600 dark:text-brand-400 text-xs font-semibold transition-colors"

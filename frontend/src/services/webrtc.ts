@@ -22,12 +22,15 @@ export type WebRTCFileReceivedCallback = (
 
 const ICE_SERVERS: RTCIceServer[] = [
   // Local host candidates work 100% offline on LAN without external servers
-  // Redundant public STUN servers for NAT traversal when connecting via cloud signaling
+  // Redundant public STUN servers for NAT traversal across different networks
   {
     urls: [
       'stun:stun.l.google.com:19302',
       'stun:stun1.l.google.com:19302',
       'stun:stun2.l.google.com:19302',
+      'stun:stun.cloudflare.com:3478',
+      'stun:stun.services.mozilla.com',
+      'stun:global.stun.twilio.com:3478',
     ],
   },
 ];
