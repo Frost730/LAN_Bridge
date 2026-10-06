@@ -194,8 +194,8 @@ export const api = {
       handleResponse<HistoryItem[]>(r)
     ),
 
-  clearHistory: () =>
-    fetch(`${BASE_URL}/api/history`, { method: 'DELETE' }).then((r) =>
+  clearHistory: (deviceId?: string) =>
+    fetch(`${BASE_URL}/api/history${deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : ''}`, { method: 'DELETE' }).then((r) =>
       handleResponse<{ status: string }>(r)
     ),
 

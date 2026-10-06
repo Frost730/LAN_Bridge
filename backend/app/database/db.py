@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS transfer_files (
 CREATE TABLE IF NOT EXISTS history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     transfer_id TEXT NOT NULL,
+    sender_device_id TEXT,
+    receiver_device_id TEXT,
     device_name TEXT NOT NULL,
     direction TEXT NOT NULL, -- 'sent' or 'received'
     filename TEXT NOT NULL,
@@ -74,6 +76,8 @@ CREATE TABLE IF NOT EXISTS history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_history_sender ON history(sender_device_id);
+CREATE INDEX IF NOT EXISTS idx_history_receiver ON history(receiver_device_id);
 CREATE INDEX IF NOT EXISTS idx_transfer_files_transfer ON transfer_files(transfer_id);
 """
 
@@ -95,6 +99,15 @@ class Database:
         settings.ensure_directories()
         async with self.get_connection() as db:
             await db.executescript(CREATE_TABLES_SQL)
+            # Automatic schema migration for existing databases
+            try:
+                await db.execute("ALTER TABLE history ADD COLUMN sender_device_id TEXT")
+            except Exception:
+                pass
+            try:
+                await db.execute("ALTER TABLE history ADD COLUMN receiver_device_id TEXT")
+            except Exception:
+                pass
             await db.commit()
 
     async def get_setting(self, key: str, default: Any = None) -> Any:
@@ -164,13 +177,23 @@ class Database:
                 return [dict(row) for row in rows]
 
     # History Operations
-    async def add_history(self, transfer_id: str, device_name: str, direction: str, filename: str, size: int, result: str) -> None:
+    async def add_history(
+        self,
+        transfer_id: str,
+        device_name: str,
+        direction: str,
+        filename: str,
+        size: int,
+        result: str,
+        sender_device_id: Optional[str] = None,
+        receiver_device_id: Optional[str] = None
+    ) -> None:
         import time
         async with self.get_connection() as db:
             await db.execute("""
-                INSERT INTO history (transfer_id, device_name, direction, filename, size, timestamp, result)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (transfer_id, device_name, direction, filename, size, time.time(), result))
+                INSERT INTO history (transfer_id, sender_device_id, receiver_device_id, device_name, direction, filename, size, timestamp, result)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (transfer_id, sender_device_id, receiver_device_id, device_name, direction, filename, size, time.time(), result))
             await db.commit()
 
     async def get_history(self, limit: int = 100) -> List[Dict[str, Any]]:
@@ -182,11 +205,12 @@ class Database:
     async def get_history_for_device(self, device_id: str, limit: int = 100) -> List[Dict[str, Any]]:
         async with self.get_connection() as db:
             async with db.execute("""
-                SELECT h.id, h.transfer_id, h.device_name, h.direction, h.filename, h.size, h.timestamp, h.result
-                FROM history h
-                LEFT JOIN transfers t ON h.transfer_id = t.id
-                WHERE t.sender_device_id = ? OR t.receiver_device_id = ?
-                ORDER BY h.timestamp DESC LIMIT ?
+                SELECT id, transfer_id, device_name, direction, filename, size, timestamp, result
+                FROM history
+                WHERE (direction = 'sent' AND sender_device_id = ?)
+                   OR (direction = 'received' AND receiver_device_id = ?)
+                   OR (sender_device_id IS NULL AND receiver_device_id IS NULL)
+                ORDER BY timestamp DESC LIMIT ?
             """, (device_id, device_id, limit)) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
@@ -194,6 +218,15 @@ class Database:
     async def clear_history(self) -> None:
         async with self.get_connection() as db:
             await db.execute("DELETE FROM history")
+            await db.commit()
+
+    async def clear_history_for_device(self, device_id: str) -> None:
+        async with self.get_connection() as db:
+            await db.execute("""
+                DELETE FROM history
+                WHERE (direction = 'sent' AND sender_device_id = ?)
+                   OR (direction = 'received' AND receiver_device_id = ?)
+            """, (device_id, device_id))
             await db.commit()
 
 db = Database()

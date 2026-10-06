@@ -26,12 +26,12 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ localDevice }) => {
 
   useEffect(() => {
     loadHistory();
-  }, []);
+  }, [localDevice?.device_id]);
 
   const handleClearHistory = async () => {
     if (window.confirm('Are you sure you want to clear transfer history?')) {
       try {
-        await api.clearHistory();
+        await api.clearHistory(localDevice?.device_id);
         setHistory([]);
       } catch (e) {
         console.error('Failed to clear history:', e);

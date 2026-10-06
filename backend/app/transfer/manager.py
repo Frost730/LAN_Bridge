@@ -256,16 +256,30 @@ class TransferManager:
             else:
                 f.status = FileTransferState.COMPLETED
                 f.bytes_received = f.size
-        # Record in SQLite history
+        # Record in SQLite history for both receiver and sender
         try:
             filename = session.root_name if session.is_folder else (list(session.files.values())[0].filename if session.files else "file")
+            # Receiver entry: received from sender
             await db.add_history(
                 transfer_id=session.transfer_id,
                 device_name=session.sender_name,
                 direction="received",
                 filename=filename,
                 size=session.total_size,
-                result="completed"
+                result="completed",
+                sender_device_id=session.sender_device_id,
+                receiver_device_id=session.receiver_device_id
+            )
+            # Sender entry: sent to receiver
+            await db.add_history(
+                transfer_id=session.transfer_id,
+                device_name=session.receiver_name,
+                direction="sent",
+                filename=filename,
+                size=session.total_size,
+                result="completed",
+                sender_device_id=session.sender_device_id,
+                receiver_device_id=session.receiver_device_id
             )
         except Exception as e:
             logger.warning(f"Could not record transfer to history: {e}")
@@ -323,15 +337,31 @@ class TransferManager:
         if all_completed:
             session.status = TransferState.COMPLETED
             session.completed_at = time.time()
-            # Record in SQLite history
-            await db.add_history(
-                transfer_id=session.transfer_id,
-                device_name=session.sender_name,
-                direction="received",
-                filename=session.root_name if session.is_folder else list(session.files.values())[0].filename,
-                size=session.total_size,
-                result="completed"
-            )
+            # Record in SQLite history for both receiver and sender
+            filename = session.root_name if session.is_folder else list(session.files.values())[0].filename
+            try:
+                await db.add_history(
+                    transfer_id=session.transfer_id,
+                    device_name=session.sender_name,
+                    direction="received",
+                    filename=filename,
+                    size=session.total_size,
+                    result="completed",
+                    sender_device_id=session.sender_device_id,
+                    receiver_device_id=session.receiver_device_id
+                )
+                await db.add_history(
+                    transfer_id=session.transfer_id,
+                    device_name=session.receiver_name,
+                    direction="sent",
+                    filename=filename,
+                    size=session.total_size,
+                    result="completed",
+                    sender_device_id=session.sender_device_id,
+                    receiver_device_id=session.receiver_device_id
+                )
+            except Exception as e:
+                logger.warning(f"Could not record transfer to history: {e}")
 
         return True, None
 

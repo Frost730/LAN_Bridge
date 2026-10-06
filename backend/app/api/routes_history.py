@@ -17,6 +17,11 @@ async def get_history(device_id: Optional[str] = Query(None), limit: int = 100) 
     return await db.get_history(limit=limit)
 
 @router.delete("")
-async def clear_history() -> Dict[str, Any]:
-    await db.clear_history()
+async def clear_history(device_id: Optional[str] = Query(None)) -> Dict[str, Any]:
+    if is_cloud_env() and device_id:
+        await db.clear_history_for_device(device_id)
+    elif device_id:
+        await db.clear_history_for_device(device_id)
+    else:
+        await db.clear_history()
     return {"status": "ok", "message": "History cleared"}
