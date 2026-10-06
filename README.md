@@ -1,3 +1,14 @@
+---
+title: LANBridge
+emoji: ⚡
+colorFrom: indigo
+colorTo: blue
+sdk: docker
+app_port: 8000
+pinned: false
+license: mit
+---
+
 # LANBridge ⚡
 
 > **High-speed, private, local network file and folder transfer application.**  

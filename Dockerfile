@@ -16,11 +16,12 @@ COPY backend /app/backend
 COPY frontend/dist /app/frontend/dist
 COPY run.py /app/run.py
 
-# Create persistent storage directories
-RUN mkdir -p /app/data /app/received /app/temp
+# Create persistent storage directories with full permissions for non-root containers
+RUN mkdir -p /app/data /app/received /app/temp && chmod -R 777 /app
 
-# Expose default HTTP / WebSocket port
+# Expose default HTTP / WebSocket ports (8000 for standard, 7860 for Hugging Face)
 EXPOSE 8000
+EXPOSE 7860
 
 # Run LANBridge server
 CMD ["python", "run.py"]
