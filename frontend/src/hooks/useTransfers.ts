@@ -4,8 +4,7 @@ import { api } from '../services/api';
 import { wsClient } from '../services/websocket';
 import { calculateFileSHA256 } from '../utils/hashing';
 import { webrtcManager } from '../services/webrtc';
-
-const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
+import { getTransferConfig } from '../utils/transferSettings';
 
 export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: string, body?: string) => void) {
   const [transfers, setTransfers] = useState<TransferItem[]>([]);
@@ -146,6 +145,11 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
           setTransfers((prev) =>
             prev.map((t) => (t.transfer_id === transferId ? { ...t, transport: 'webrtc' } : t))
           );
+
+          const engineConfig = getTransferConfig();
+          const webrtcChunkSize = engineConfig.performanceMode ? 128 * 1024 : 64 * 1024;
+          let lastProgressTime = 0;
+
           for (const item of files) {
             await webrtcManager.sendFileOverDataChannel(
               channel,
@@ -154,22 +158,27 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
               item.fileObj,
               item.relativePath,
               item.sha256 || '',
-              64 * 1024,
+              webrtcChunkSize,
               (sent, total) => {
+                const now = Date.now();
                 const pct = Math.min(100, Math.round((sent / total) * 100));
-                setTransfers((prev) =>
-                  prev.map((t) =>
-                    t.transfer_id === transferId
-                      ? {
-                          ...t,
-                          bytes_transferred: sent,
-                          progress_percentage: pct,
-                          status: pct === 100 ? 'completed' : 'transferring',
-                          transport: 'webrtc',
-                        }
-                      : t
-                  )
-                );
+                // Throttled UI updates in performance mode to eliminate CPU rendering bottlenecks
+                if (pct === 100 || !engineConfig.performanceMode || now - lastProgressTime > 150) {
+                  lastProgressTime = now;
+                  setTransfers((prev) =>
+                    prev.map((t) =>
+                      t.transfer_id === transferId
+                        ? {
+                            ...t,
+                            bytes_transferred: sent,
+                            progress_percentage: pct,
+                            status: pct === 100 ? 'completed' : 'transferring',
+                            transport: 'webrtc',
+                          }
+                        : t
+                    )
+                  );
+                }
               }
             );
           }
@@ -305,9 +314,13 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     files: { fileObj: File; fileId: string; relativePath: string }[]
   ) => {
     const ctrl = activeControlRef.current.get(transferId) || { paused: false, cancelled: false };
+    const engineConfig = getTransferConfig();
+    const CHUNK_SIZE = engineConfig.chunkSize;
+    const CONCURRENCY = Math.max(1, Math.min(files.length, engineConfig.concurrentTransfers));
 
-    for (const item of files) {
-      if (ctrl.cancelled) break;
+    // Upload single file sequentially in chunks
+    const uploadSingleFile = async (item: { fileObj: File; fileId: string; relativePath: string }) => {
+      if (ctrl.cancelled) return;
 
       const file = item.fileObj;
       const totalSize = file.size;
@@ -348,11 +361,24 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
           await api.uploadChunk(transferId, item.fileId, chunkIdx, offset, chunkBlob);
         } catch (err) {
           console.error(`Error uploading chunk ${chunkIdx} of ${file.name}:`, err);
-          // Wait briefly before retrying
           await new Promise((r) => setTimeout(r, 1000));
         }
       }
-    }
+    };
+
+    // Distribute files across concurrent worker slots
+    let nextFileIndex = 0;
+    const worker = async () => {
+      while (nextFileIndex < files.length && !ctrl.cancelled) {
+        const fileToUpload = files[nextFileIndex++];
+        if (fileToUpload) {
+          await uploadSingleFile(fileToUpload);
+        }
+      }
+    };
+
+    const workerPool = Array.from({ length: CONCURRENCY }, () => worker());
+    await Promise.all(workerPool);
 
     localFilesRef.current.delete(transferId);
     activeControlRef.current.delete(transferId);

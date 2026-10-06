@@ -20,15 +20,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   onUnpairSelf,
 }) => {
   const [deviceName, setDeviceName] = useState(localDevice.device_name);
-  const [settings, setSettings] = useState<AppSettings>({
-    device_name: localDevice.device_name,
-    server_port: 8000,
-    require_approval: true,
-    concurrent_transfers: 3,
-    chunk_size: 2097152,
-    performance_mode: false,
-    notifications: true,
-    theme: currentTheme,
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    const savedConcurrency = parseInt(localStorage.getItem('lanbridge_concurrent_transfers') || '3', 10);
+    const savedChunkSize = parseInt(localStorage.getItem('lanbridge_chunk_size') || '2097152', 10);
+    const savedPerf = localStorage.getItem('lanbridge_performance_mode') === 'true';
+    return {
+      device_name: localDevice.device_name,
+      server_port: 8000,
+      require_approval: true,
+      concurrent_transfers: savedConcurrency,
+      chunk_size: savedChunkSize,
+      performance_mode: savedPerf,
+      notifications: true,
+      theme: currentTheme,
+    };
   });
 
   const [hostDevice, setHostDevice] = useState<DeviceInfo | null>(null);
@@ -51,7 +56,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           api.getSettings(),
           api.getHostDevice().catch(() => null)
         ]);
-        setSettings({ ...s, theme: currentTheme });
+        const savedConcurrency = localStorage.getItem('lanbridge_concurrent_transfers');
+        const savedChunkSize = localStorage.getItem('lanbridge_chunk_size');
+        const savedPerf = localStorage.getItem('lanbridge_performance_mode');
+
+        setSettings({
+          ...s,
+          device_name: localDevice.device_name,
+          theme: currentTheme,
+          concurrent_transfers: savedConcurrency ? parseInt(savedConcurrency, 10) : (s.concurrent_transfers || 3),
+          chunk_size: savedChunkSize ? parseInt(savedChunkSize, 10) : (s.chunk_size || 2097152),
+          performance_mode: savedPerf !== null ? (savedPerf === 'true') : Boolean(s.performance_mode),
+        });
         if (h) setHostDevice(h);
       } catch {
         // Fallback
@@ -202,7 +218,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           <div>
             <div className="flex justify-between items-center mb-1.5">
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Concurrent Transfer Limit: {settings.concurrent_transfers}
+                Concurrent Transfer Limit: {settings.concurrent_transfers} {settings.concurrent_transfers > 1 ? '(Parallel streaming active)' : '(Single file queue)'}
               </label>
             </div>
             <input
@@ -210,7 +226,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               min={1}
               max={6}
               value={settings.concurrent_transfers}
-              onChange={(e) => setSettings({ ...settings, concurrent_transfers: parseInt(e.target.value) })}
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                setSettings((prev) => ({ ...prev, concurrent_transfers: val }));
+                localStorage.setItem('lanbridge_concurrent_transfers', String(val));
+              }}
               className="w-full accent-brand-600"
             />
           </div>
@@ -221,7 +241,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             </label>
             <select
               value={settings.chunk_size}
-              onChange={(e) => setSettings({ ...settings, chunk_size: parseInt(e.target.value) })}
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                setSettings((prev) => ({ ...prev, chunk_size: val }));
+                localStorage.setItem('lanbridge_chunk_size', String(val));
+              }}
               className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
             >
               <option value={1048576}>1 MB (Low Memory / Mobile)</option>
@@ -236,13 +260,17 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 Performance Mode
               </span>
               <span className="text-[11px] text-slate-500">
-                Optimizes streaming buffers and reduces UI render cycles during multi-gigabit transfers.
+                Optimizes streaming buffers (4MB flow-control) and throttles UI render cycles to maximize gigabit throughput.
               </span>
             </div>
             <input
               type="checkbox"
               checked={settings.performance_mode}
-              onChange={(e) => setSettings({ ...settings, performance_mode: e.target.checked })}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setSettings((prev) => ({ ...prev, performance_mode: checked }));
+                localStorage.setItem('lanbridge_performance_mode', String(checked));
+              }}
               className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500"
             />
           </label>
