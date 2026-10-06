@@ -5,10 +5,11 @@ import zipfile
 import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, Request, HTTPException, Query, Header
+from fastapi import APIRouter, Request, HTTPException, Query, Header, BackgroundTasks
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ..config import settings
+from ..database.db import db
 from ..transfer.protocol import TransferState, FileTransferState
 from ..transfer.manager import transfer_manager
 from ..websocket.manager import ws_manager
@@ -238,8 +239,36 @@ async def upload_chunk(
         "transfer_completed": session.status == TransferState.COMPLETED if session else False
     }
 
+def delete_file_safely(file_path: str):
+    """
+    Safely unlinks/destroys ephemeral files from disk after transfer stream finishes.
+    Also cleans up empty parent directories within settings.RECEIVED_DIR.
+    """
+    try:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+            logger.info(f"Ephemeral privacy: safely deleted {file_path} after download.")
+            p = Path(file_path).parent
+            received_p = Path(settings.RECEIVED_DIR).resolve()
+            while p.resolve() != received_p and p.exists():
+                try:
+                    if not any(p.iterdir()):
+                        p.rmdir()
+                        p = p.parent
+                    else:
+                        break
+                except Exception:
+                    break
+    except Exception as e:
+        logger.warning(f"Could not auto-delete ephemeral file {file_path}: {e}")
+
+async def should_auto_delete() -> bool:
+    if settings.AUTO_DELETE_ON_DOWNLOAD:
+        return True
+    return bool(await db.get_setting("auto_delete_on_download", False))
+
 @router.get("/{transfer_id}/files/{file_id}/download")
-async def download_single_file(transfer_id: str, file_id: str):
+async def download_single_file(transfer_id: str, file_id: str, background_tasks: BackgroundTasks):
     session = transfer_manager.get_transfer(transfer_id)
     if not session:
         raise HTTPException(status_code=404, detail="Transfer not found")
@@ -248,14 +277,18 @@ async def download_single_file(transfer_id: str, file_id: str):
     if not file_obj or not file_obj.final_filepath or not os.path.exists(file_obj.final_filepath):
         raise HTTPException(status_code=404, detail="File not ready or does not exist")
 
+    filepath = file_obj.final_filepath
+    if await should_auto_delete():
+        background_tasks.add_task(delete_file_safely, filepath)
+
     return FileResponse(
-        path=file_obj.final_filepath,
+        path=filepath,
         filename=file_obj.filename,
         media_type="application/octet-stream"
     )
 
 @router.get("/{transfer_id}/download-zip")
-async def download_transfer_zip(transfer_id: str):
+async def download_transfer_zip(transfer_id: str, background_tasks: BackgroundTasks):
     """
     Provides graceful fallback for folder and multi-file downloads on browsers
     that do not support native directory writing (Requirement 10 & 49).
@@ -266,14 +299,20 @@ async def download_transfer_zip(transfer_id: str):
 
     # Build zip in memory/stream
     zip_buffer = io.BytesIO()
+    files_to_delete = []
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for f in session.files.values():
             if f.final_filepath and os.path.exists(f.final_filepath):
                 # Archive name preserves relative path
                 zip_file.write(f.final_filepath, arcname=f.relative_path)
+                files_to_delete.append(f.final_filepath)
 
     zip_buffer.seek(0)
     zip_filename = f"{session.root_name}.zip" if session.is_folder else f"{session.transfer_id[:8]}_files.zip"
+
+    if await should_auto_delete():
+        for fp in files_to_delete:
+            background_tasks.add_task(delete_file_safely, fp)
 
     return StreamingResponse(
         zip_buffer,

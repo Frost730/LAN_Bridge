@@ -1,6 +1,7 @@
 import os
 import socket
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -9,9 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 
-from .config import settings, BASE_DIR
+from .config import settings, BASE_DIR, is_cloud_env
 from .database.db import db
 from .websocket.manager import ws_manager
+from .transfer.manager import transfer_manager
 from .discovery.interfaces import get_primary_lan_ip
 from .discovery.mdns import mdns_manager
 
@@ -46,6 +48,20 @@ async def lifespan(app: FastAPI):
     # Start mDNS discovery service
     mdns_manager.start(host_name, settings.PORT, host_id)
 
+    # Background task for periodic stale transfer & ephemeral relay cleanup
+    async def periodic_ephemeral_cleanup():
+        while True:
+            try:
+                await asyncio.sleep(600)  # every 10 minutes
+                transfer_manager.cleanup_stale_transfers()
+                transfer_manager.cleanup_old_files(settings.AUTO_CLEANUP_HOURS)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug(f"Periodic cleanup error: {e}")
+
+    cleanup_task = asyncio.create_task(periodic_ephemeral_cleanup())
+
     primary_ip = get_primary_lan_ip()
     port = settings.PORT
 
@@ -59,10 +75,9 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    cleanup_task.cancel()
     mdns_manager.stop()
     logger.info("LANBridge backend stopped cleanly")
-
-from .api.routes_device import is_cloud_env
 
 cloud_deployment = is_cloud_env()
 

@@ -4,20 +4,13 @@ import socket
 import platform
 from fastapi import APIRouter, Request, HTTPException
 from typing import List, Dict, Any, Optional
+from ..config import settings, is_cloud_env
 from ..database.db import db
 from ..websocket.manager import ws_manager
 from ..discovery.interfaces import get_primary_lan_ip
 from ..models.schemas import DeviceInfo, AppSettings
 
 router = APIRouter(prefix="/api", tags=["device"])
-
-def is_cloud_env() -> bool:
-    return bool(
-        os.getenv("RENDER")
-        or os.getenv("LANBRIDGE_CLOUD")
-        or os.getenv("SPACE_ID")
-        or (os.getenv("PORT") and not getattr(sys, "frozen", False))
-    )
 
 @router.get("/device")
 async def get_host_device(request: Request) -> Dict[str, Any]:
@@ -118,7 +111,8 @@ async def get_settings() -> Dict[str, Any]:
         "chunk_size": await db.get_setting("chunk_size", 2097152),
         "performance_mode": await db.get_setting("performance_mode", False),
         "notifications": await db.get_setting("notifications", True),
-        "theme": await db.get_setting("theme", "system")
+        "theme": await db.get_setting("theme", "system"),
+        "auto_delete_on_download": await db.get_setting("auto_delete_on_download", settings.AUTO_DELETE_ON_DOWNLOAD)
     }
 
 @router.put("/settings")

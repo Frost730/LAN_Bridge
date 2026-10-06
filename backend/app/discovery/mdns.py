@@ -1,7 +1,14 @@
 import socket
 import logging
 from typing import Dict, List, Optional
-from zeroconf import Zeroconf, ServiceInfo, ServiceBrowser, ServiceListener
+try:
+    from zeroconf import Zeroconf, ServiceInfo, ServiceBrowser, ServiceListener
+    ZEROCONF_AVAILABLE = True
+except ImportError:
+    Zeroconf = ServiceInfo = ServiceBrowser = object
+    ServiceListener = object
+    ZEROCONF_AVAILABLE = False
+
 from .interfaces import get_primary_lan_ip
 
 logger = logging.getLogger(__name__)
@@ -75,6 +82,10 @@ class MDNSManager:
         if self.is_running:
             return
         
+        if not ZEROCONF_AVAILABLE:
+            logger.info("zeroconf not available — mDNS discovery disabled (fallback methods active)")
+            return
+
         # In cloud environments (Render/Docker/Kubernetes), local UDP multicast is not available
         import os
         if bool(os.getenv("RENDER") or os.getenv("LANBRIDGE_CLOUD") or os.getenv("SPACE_ID")):

@@ -14,6 +14,14 @@ else:
 BASE_DIR = BUNDLE_DIR
 BACKEND_DIR = BUNDLE_DIR / "backend"
 
+def is_cloud_env() -> bool:
+    return bool(
+        os.getenv("RENDER")
+        or os.getenv("LANBRIDGE_CLOUD")
+        or os.getenv("SPACE_ID")
+        or (os.getenv("PORT") and not getattr(sys, "frozen", False))
+    )
+
 class Settings:
     APP_NAME: str = "LANBridge"
     VERSION: str = "1.0.0"
@@ -37,6 +45,16 @@ class Settings:
     PAIRING_TOKEN_EXPIRY_SECONDS: int = 600  # 10 minutes
     MAX_PAIR_ATTEMPTS_PER_MINUTE: int = 5
     REQUIRE_APPROVAL: bool = True
+
+    # Cloud & Ephemeral Storage Privacy settings
+    # When enabled, files transferred via HTTP relay are automatically unlinked/deleted
+    # the instant the recipient finishes downloading them.
+    # Defaults to True in cloud hosting (Render, Spaces) or when AUTO_DELETE_ON_DOWNLOAD=true
+    AUTO_DELETE_ON_DOWNLOAD: bool = os.getenv(
+        "AUTO_DELETE_ON_DOWNLOAD",
+        "true" if is_cloud_env() else "false"
+    ).lower() in ("true", "1", "yes")
+    AUTO_CLEANUP_HOURS: int = int(os.getenv("AUTO_CLEANUP_HOURS", "1"))
 
     def ensure_directories(self) -> None:
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)

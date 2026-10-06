@@ -366,4 +366,30 @@ class TransferManager:
                 except Exception as e:
                     logger.debug(f"Could not remove temp file {f.temp_filepath}: {e}")
 
+    def cleanup_old_files(self, max_age_hours: int = 1) -> None:
+        """Cleans up received files older than max_age_hours if auto_delete or cloud is active"""
+        if not settings.AUTO_DELETE_ON_DOWNLOAD:
+            return
+        now = time.time()
+        max_age_secs = max_age_hours * 3600
+        try:
+            for root, dirs, files in os.walk(settings.RECEIVED_DIR, topdown=False):
+                for name in files:
+                    fp = os.path.join(root, name)
+                    try:
+                        if (now - os.path.getmtime(fp)) > max_age_secs:
+                            os.remove(fp)
+                            logger.info(f"Ephemeral privacy: automatically purged stale file {name}")
+                    except Exception:
+                        pass
+                for name in dirs:
+                    dp = os.path.join(root, name)
+                    try:
+                        if not os.listdir(dp):
+                            os.rmdir(dp)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.warning(f"Error during ephemeral cleanup: {e}")
+
 transfer_manager = TransferManager()
