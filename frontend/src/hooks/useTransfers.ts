@@ -5,6 +5,7 @@ import { wsClient } from '../services/websocket';
 import { calculateFileSHA256 } from '../utils/hashing';
 import { webrtcManager } from '../services/webrtc';
 import { getTransferConfig } from '../utils/transferSettings';
+import { SpeedCalculator } from '../utils/speed';
 
 export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: string, body?: string) => void) {
   const [transfers, setTransfers] = useState<TransferItem[]>([]);
@@ -46,11 +47,19 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
         setTransfers((prev) =>
           prev.map((t) => {
             if (t.transfer_id === update.transfer_id) {
+              const speed = update.speed_bps;
+              const totalSize = t.total_size > 0 ? t.total_size : update.total_size;
+              const remaining = Math.max(0, totalSize - update.bytes_transferred);
+              const eta = update.eta_seconds !== undefined && update.eta_seconds !== null
+                ? update.eta_seconds
+                : (speed > 1024 ? Math.round(remaining / speed) : null);
+
               return {
                 ...t,
                 bytes_transferred: update.bytes_transferred,
                 progress_percentage: update.progress_percentage,
-                speed_bps: update.speed_bps,
+                speed_bps: speed,
+                eta_seconds: eta,
                 transport: 'webrtc',
               };
             }
@@ -76,6 +85,8 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
                 ...t,
                 status: 'completed',
                 progress_percentage: 100,
+                speed_bps: 0,
+                eta_seconds: 0,
                 transport: 'webrtc',
               };
             }
@@ -119,11 +130,17 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       setTransfers((prev) =>
         prev.map((t) => {
           if (t.transfer_id === data.transfer_id) {
+            const speed = data.speed_bps || 0;
+            const remaining = Math.max(0, (t.total_size || 0) - data.bytes_transferred);
+            const eta = data.eta_seconds !== undefined && data.eta_seconds !== null
+              ? data.eta_seconds
+              : (speed > 1024 ? Math.round(remaining / speed) : null);
             return {
               ...t,
               bytes_transferred: data.bytes_transferred,
               progress_percentage: data.progress_percentage,
-              speed_bps: data.speed_bps,
+              speed_bps: speed,
+              eta_seconds: eta,
               status: data.status,
             };
           }
@@ -171,6 +188,9 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
             const engineConfig = getTransferConfig();
             const webrtcChunkSize = engineConfig.performanceMode ? 128 * 1024 : 64 * 1024;
             let lastProgressTime = 0;
+            const senderSpeedCalc = new SpeedCalculator(2.5);
+            const overallTotalSize = files.reduce((acc, f) => acc + f.fileObj.size, 0);
+            let cumulativeBytesBefore = 0;
 
             for (const item of files) {
               if (ctrl.cancelled) break;
@@ -183,18 +203,26 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
                 item.relativePath,
                 item.sha256 || '',
                 webrtcChunkSize,
-                (sent, total) => {
+                (sentInFile, fileTotal) => {
                   const now = Date.now();
-                  const pct = Math.min(100, Math.round((sent / total) * 100));
-                  if (pct === 100 || !engineConfig.performanceMode || now - lastProgressTime > 150) {
+                  const totalSent = cumulativeBytesBefore + sentInFile;
+                  senderSpeedCalc.record(totalSent, now);
+                  const pct = Math.min(100, Math.round((totalSent / overallTotalSize) * 100));
+
+                  if (pct === 100 || !engineConfig.performanceMode || now - lastProgressTime > 100) {
                     lastProgressTime = now;
+                    const speed = Math.round(senderSpeedCalc.getSpeed());
+                    const eta = senderSpeedCalc.getETA(overallTotalSize, totalSent);
+
                     setTransfers((prev) =>
                       prev.map((t) =>
                         t.transfer_id === transferId
                           ? {
                               ...t,
-                              bytes_transferred: sent,
+                              bytes_transferred: totalSent,
                               progress_percentage: pct,
+                              speed_bps: speed,
+                              eta_seconds: pct === 100 ? 0 : eta,
                               status: pct === 100 ? 'completed' : 'transferring',
                               transport: 'webrtc',
                             }
@@ -204,6 +232,26 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
                   }
                 },
                 () => activeControlRef.current.get(transferId) || { paused: false, cancelled: false }
+              );
+
+              cumulativeBytesBefore += item.fileObj.size;
+            }
+
+            if (!ctrl.cancelled) {
+              setTransfers((prev) =>
+                prev.map((t) =>
+                  t.transfer_id === transferId
+                    ? {
+                        ...t,
+                        bytes_transferred: overallTotalSize,
+                        progress_percentage: 100,
+                        speed_bps: 0,
+                        eta_seconds: 0,
+                        status: 'completed',
+                        transport: 'webrtc',
+                      }
+                    : t
+                )
               );
             }
             return;

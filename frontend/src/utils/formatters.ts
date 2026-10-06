@@ -16,6 +16,9 @@ export function formatETA(seconds?: number | null): string {
   if (seconds === undefined || seconds === null || !isFinite(seconds) || seconds < 0) {
     return 'Calculating...';
   }
+  if (seconds === 0) {
+    return 'Almost done';
+  }
   if (seconds < 60) {
     return `${Math.round(seconds)}s remaining`;
   }

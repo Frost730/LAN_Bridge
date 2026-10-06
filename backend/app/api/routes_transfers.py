@@ -191,14 +191,19 @@ async def upload_chunk(
     session = transfer_manager.get_transfer(transfer_id)
     file_obj = session.files.get(file_id) if session else None
 
+    speed = session.speed_calc.get_speed() if session else 0.0
+    remaining_bytes = max(0, session.total_size - session.bytes_transferred) if session else 0
+    eta = int(remaining_bytes / speed) if speed > 1024 else None
+
     # Periodic/chunk progress event
     await ws_manager.broadcast({
         "type": "transfer_progress",
         "transfer_id": transfer_id,
         "file_id": file_id,
         "bytes_transferred": session.bytes_transferred if session else 0,
-        "progress_percentage": session.progress_percentage if session else 0,
-        "speed_bps": session.speed_calc.get_speed() if session else 0,
+        "progress_percentage": round(session.progress_percentage, 1) if session else 0,
+        "speed_bps": round(speed, 1),
+        "eta_seconds": eta,
         "status": session.status.value if session else "transferring"
     })
 

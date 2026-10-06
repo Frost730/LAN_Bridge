@@ -1,4 +1,5 @@
 import { wsClient } from './websocket';
+import { SpeedCalculator } from '../utils/speed';
 
 export interface WebRTCProgressUpdate {
   transfer_id: string;
@@ -7,6 +8,7 @@ export interface WebRTCProgressUpdate {
   total_size: number;
   progress_percentage: number;
   speed_bps: number;
+  eta_seconds?: number | null;
 }
 
 export type WebRTCFileReceivedCallback = (
@@ -47,6 +49,8 @@ class WebRTCManager {
       chunks: ArrayBuffer[];
       bytes_received: number;
       total_chunks: number;
+      speed_calc: SpeedCalculator;
+      last_progress_time: number;
     }
   > = new Map();
 
@@ -246,6 +250,8 @@ class WebRTCManager {
         chunks: [],
         bytes_received: 0,
         total_chunks: msg.total_chunks,
+        speed_calc: new SpeedCalculator(2.5),
+        last_progress_time: 0,
       });
     } else if (msg.type === 'file_end') {
       const key = `${msg.transfer_id}:${msg.file_id}`;
@@ -298,16 +304,26 @@ class WebRTCManager {
 
     activeEntry.chunks.push(payload);
     activeEntry.bytes_received += payload.byteLength;
+    activeEntry.speed_calc.record(activeEntry.bytes_received);
 
-    if (this.onProgressCallback) {
+    const now = Date.now();
+    const isFinished = activeEntry.bytes_received >= activeEntry.size;
+
+    // Rate-limit progress callback to ~100-120ms or upon completion to keep UI smooth and performant
+    if (this.onProgressCallback && (isFinished || now - activeEntry.last_progress_time >= 100)) {
+      activeEntry.last_progress_time = now;
       const pct = Math.min(100, Math.round((activeEntry.bytes_received / activeEntry.size) * 100));
+      const speed = Math.round(activeEntry.speed_calc.getSpeed());
+      const eta = activeEntry.speed_calc.getETA(activeEntry.size, activeEntry.bytes_received);
+
       this.onProgressCallback({
         transfer_id: activeEntry.transfer_id,
         file_id: activeEntry.file_id,
         bytes_transferred: activeEntry.bytes_received,
         total_size: activeEntry.size,
         progress_percentage: pct,
-        speed_bps: 0,
+        speed_bps: speed,
+        eta_seconds: eta,
       });
     }
   }
