@@ -55,7 +55,8 @@ Whether you are on the same local Wi-Fi network or connecting across different n
 - **Strict Path Traversal Defenses**: Complete sanitization of filenames and relative paths, preventing directory escapes (`../../`, drive specifiers, null bytes, DOS reserved names).
 - **Host Pairing Approval**: Untrusted devices must be approved before connecting. Includes 1-click "Trust this device" whitelist and instant unpair/disconnect buttons.
 - **Ephemeral QR & 6-Digit Codes**: Expiring, rate-limited credentials protect against unauthorized access.
-- **Zero Cloud Storage**: Files stream in real-time between memory and target destination; your data is never stored in any cloud database.
+- **Immediate Ephemeral File Shredder (`AUTO_DELETE_ON_DOWNLOAD`)**: In cloud or relay environments, files flowing through HTTP relay are automatically and immediately wiped from the server container the instant the recipient finishes downloading them.
+- **Zero Cloud Storage**: Direct WebRTC P2P transfers stream browser-to-browser with 0 bytes ever touching server disk. In HTTP relay mode, files are ephemeral and never stored in any cloud database.
 
 ### 📱 Responsive PWA & Native Notifications
 - **Mobile & Desktop First**: Tailored layouts for smartphones (mobile navigation, bottom-sheet dialogs, 48px touch targets, notch support) and desktop monitors.
@@ -181,16 +182,30 @@ python run.py
 LANBridge is designed with uncompromising privacy principles:
 
 - **Zero Telemetry or Analytics**: There are no tracking scripts, analytics SDKs, third-party cookies, or telemetry beacons anywhere in the application.
-- **No Cloud File Storage**: Transferred files stream directly between sender and receiver in real time. Your files are never cached, logged, or uploaded to any third-party cloud server.
+- **Direct P2P Data Flow**: When devices connect via WebRTC, data streams directly browser-to-browser via `RTCDataChannel`. Exactly **0 bytes** ever touch the server disk or relay memory.
+- **Immediate Ephemeral Shredder (`AUTO_DELETE_ON_DOWNLOAD`)**: When strict firewalls require HTTP relay fallback, files are automatically destroyed from the server disk the instant the recipient finishes downloading them.
+- **Automated Stale Relay Cleanup**: A periodic background garbage collector automatically purges any abandoned or incomplete relay files older than 1 hour.
 - **Local Client Storage**: Device nicknames, trusted device tokens, room preferences, and themes reside strictly inside your browser's private `localStorage`.
-- **Ephemeral Memory**: Temporary room codes, active transfer states, and real-time chat messages are stored only in volatile server RAM and automatically expire when closed.
+- **Ephemeral Memory**: Temporary room codes, active transfer states, and real-time chat messages are stored only in volatile server RAM and automatically vanish when closed.
 - **100% Offline Capable**: All web assets, icons, fonts, and scripts are bundled locally inside the project. On local Wi-Fi or Ethernet networks, LANBridge functions completely air-gapped without an internet connection.
+
+---
+
+## ⚙️ Environment Configuration
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `AUTO_DELETE_ON_DOWNLOAD` | `true` (Cloud) / `false` (Local) | Automatically unlinks and wipes relay files from disk the instant download completes. |
+| `AUTO_CLEANUP_HOURS` | `1` | Maximum lifetime (in hours) before abandoned or incomplete relay files are garbage-collected. |
+| `PORT` / `LANBRIDGE_PORT` | `8000` | Port for the HTTP and WebSocket server. |
+| `LANBRIDGE_HOST` | `0.0.0.0` | Host IP binding address. |
+| `LANBRIDGE_CLOUD` | `false` | Set to `true` when hosting on a cloud container to enforce cloud security defaults. |
 
 ---
 
 ## 🧪 Automated Testing
 
-LANBridge includes a comprehensive test suite covering security, chunking, resume mechanics, cancellation cleanup, and streaming integrity:
+LANBridge includes a test suite covering security, chunking, resume mechanics, cancellation cleanup, streaming integrity, and automatic file shredding:
 
 ```bash
 pytest backend/tests
@@ -202,6 +217,8 @@ Unit test coverage verifies:
 - Binary chunk validation and streaming memory bounds (<10MB RAM usage)
 - Resumption from specific chunk offsets
 - Incomplete temporary file cleanup upon cancellation
+- Immediate ephemeral file deletion on single and batch ZIP downloads (`AUTO_DELETE_ON_DOWNLOAD`)
+- Background garbage collection for stale relay files
 
 ---
 
