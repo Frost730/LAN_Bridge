@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Shield, Zap, Bell, Palette, HardDrive, Check, Save, Power, RotateCcw } from 'lucide-react';
-import { AppSettings } from '../types';
+import { Settings, Shield, Zap, Bell, Palette, HardDrive, Check, Save, Power, RotateCcw, Cloud } from 'lucide-react';
+import { AppSettings, DeviceInfo } from '../types';
 import { api } from '../services/api';
 import { Theme } from '../hooks/useTheme';
 
@@ -28,6 +28,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     theme: currentTheme,
   });
 
+  const [hostDevice, setHostDevice] = useState<DeviceInfo | null>(null);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isRestarting, setIsRestarting] = useState(false);
@@ -35,8 +36,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   useEffect(() => {
     const load = async () => {
       try {
-        const s = await api.getSettings();
+        const [s, h] = await Promise.all([
+          api.getSettings(),
+          api.getHostDevice().catch(() => null)
+        ]);
         setSettings(s);
+        if (h) setHostDevice(h);
       } catch {
         // Fallback
       } finally {
@@ -225,63 +230,81 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           </div>
         </div>
 
-        {/* Server Host Controls (Restart & Shutdown) */}
-        <div className="bg-slate-100/70 dark:bg-slate-900/60 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200">
-              <Power className="w-5 h-5 text-brand-500" />
-              <h3 className="font-bold text-sm">Host Server Controls</h3>
+        {/* Server Host Controls (Cloud vs Local Desktop) */}
+        {hostDevice?.can_shutdown === false ? (
+          <div className="bg-slate-100/70 dark:bg-slate-900/60 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200">
+                <Cloud className="w-5 h-5 text-brand-500" />
+                <h3 className="font-bold text-sm">Cloud-Managed Server</h3>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                LANBridge is running in cloud mode. Server lifecycle is continuously maintained by your cloud container.
+              </p>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Restart or completely shut down the background LANBridge host service.
-            </p>
+            <span className="inline-flex items-center px-3.5 py-1.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400 text-xs font-semibold shrink-0">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 mr-2 animate-pulse" />
+              Cloud Active
+            </span>
           </div>
+        ) : (
+          <div className="bg-slate-100/70 dark:bg-slate-900/60 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center space-x-2 text-slate-800 dark:text-slate-200">
+                <Power className="w-5 h-5 text-brand-500" />
+                <h3 className="font-bold text-sm">Host Server Controls</h3>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Restart or completely shut down the background LANBridge host service.
+              </p>
+            </div>
 
-          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-            {/* Restart Button */}
-            <button
-              type="button"
-              disabled={isRestarting}
-              onClick={async () => {
-                if (window.confirm('Restart the LANBridge server? Active transfers will be paused.')) {
-                  setIsRestarting(true);
-                  try {
-                    await api.restartServer();
-                  } catch {
-                    // Ignore transient network drop during restart
+            <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+              {/* Restart Button */}
+              <button
+                type="button"
+                disabled={isRestarting}
+                onClick={async () => {
+                  if (window.confirm('Restart the LANBridge server? Active transfers will be paused.')) {
+                    setIsRestarting(true);
+                    try {
+                      await api.restartServer();
+                    } catch {
+                      // Ignore transient network drop during restart
+                    }
+                    setTimeout(() => {
+                      window.location.reload();
+                    }, 3500);
                   }
-                  setTimeout(() => {
-                    window.location.reload();
-                  }, 3500);
-                }
-              }}
-              className="flex items-center justify-center space-x-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-white font-semibold text-xs shadow-md shadow-amber-500/20 transition-all select-none disabled:opacity-50"
-            >
-              <RotateCcw className={`w-4 h-4 ${isRestarting ? 'animate-spin' : ''}`} />
-              <span>{isRestarting ? 'Restarting...' : 'Restart Server'}</span>
-            </button>
+                }}
+                className="flex items-center justify-center space-x-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-white font-semibold text-xs shadow-md shadow-amber-500/20 transition-all select-none disabled:opacity-50"
+              >
+                <RotateCcw className={`w-4 h-4 ${isRestarting ? 'animate-spin' : ''}`} />
+                <span>{isRestarting ? 'Restarting...' : 'Restart Server'}</span>
+              </button>
 
-            {/* Shutdown Button */}
-            <button
-              type="button"
-              disabled={isRestarting}
-              onClick={async () => {
-                if (window.confirm('Shutdown LANBridge server? You will need to click LANBridge.exe to start it again.')) {
-                  try {
-                    await api.shutdownServer();
-                    alert('LANBridge server has shut down. You can now close this browser tab.');
-                  } catch {
-                    alert('Server shutdown initiated.');
+              {/* Shutdown Button */}
+              <button
+                type="button"
+                disabled={isRestarting}
+                onClick={async () => {
+                  if (window.confirm('Shutdown LANBridge server? You will need to click LANBridge.exe to start it again.')) {
+                    try {
+                      await api.shutdownServer();
+                      alert('LANBridge server has shut down. You can now close this browser tab.');
+                    } catch {
+                      alert('Server shutdown initiated.');
+                    }
                   }
-                }
-              }}
-              className="flex items-center justify-center space-x-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white font-semibold text-xs shadow-md shadow-rose-500/20 transition-all select-none disabled:opacity-50"
-            >
-              <Power className="w-4 h-4" />
-              <span>Shutdown Server</span>
-            </button>
+                }}
+                className="flex items-center justify-center space-x-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white font-semibold text-xs shadow-md shadow-rose-500/20 transition-all select-none disabled:opacity-50"
+              >
+                <Power className="w-4 h-4" />
+                <span>Shutdown Server</span>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Save Button */}
         <div className="flex items-center justify-end space-x-3 pt-2">

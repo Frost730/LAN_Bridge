@@ -10,6 +10,14 @@ from ..models.schemas import DeviceInfo, AppSettings
 
 router = APIRouter(prefix="/api", tags=["device"])
 
+def is_cloud_env() -> bool:
+    return bool(
+        os.getenv("RENDER")
+        or os.getenv("LANBRIDGE_CLOUD")
+        or os.getenv("SPACE_ID")
+        or (os.getenv("PORT") and not getattr(sys, "frozen", False))
+    )
+
 @router.get("/device")
 async def get_host_device(request: Request) -> Dict[str, Any]:
     saved_name = await db.get_setting("device_name", None)
@@ -25,6 +33,7 @@ async def get_host_device(request: Request) -> Dict[str, Any]:
 
     ws_manager.set_host_device_id(host_id)
     primary_ip = get_primary_lan_ip()
+    cloud_active = is_cloud_env()
 
     return {
         "device_id": host_id,
@@ -34,7 +43,9 @@ async def get_host_device(request: Request) -> Dict[str, Any]:
         "browser": "Host Server",
         "ip_address": primary_ip,
         "is_host": True,
-        "online": True
+        "online": True,
+        "is_cloud": cloud_active,
+        "can_shutdown": not cloud_active
     }
 
 @router.put("/device")
@@ -95,6 +106,11 @@ async def update_settings(new_settings: Dict[str, Any]) -> Dict[str, Any]:
 @router.post("/shutdown")
 async def shutdown_server():
     """Cleanly exit the host server process when running in windowed/noconsole mode."""
+    if is_cloud_env():
+        raise HTTPException(
+            status_code=403,
+            detail="Server shutdown is disabled in cloud hosting environments."
+        )
     import threading
     import time
     def _exit():
@@ -106,6 +122,11 @@ async def shutdown_server():
 @router.post("/restart")
 async def restart_server():
     """Restart the host server process."""
+    if is_cloud_env():
+        raise HTTPException(
+            status_code=403,
+            detail="Server restart is managed automatically by your cloud platform."
+        )
     import sys
     import subprocess
     import threading

@@ -8,6 +8,8 @@ export interface DeviceInfo {
   is_host?: boolean;
   is_trusted?: boolean;
   online?: boolean;
+  is_cloud?: boolean;
+  can_shutdown?: boolean;
 }
 
 export interface TrustedDevice {
