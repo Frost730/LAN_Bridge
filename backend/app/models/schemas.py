@@ -51,6 +51,7 @@ class TransferCreatePayload(BaseModel):
     receiver_device_id: str
     is_folder: bool = False
     root_name: str
+    chunk_size: Optional[int] = 2097152
     files: List[TransferFileMetadata]
 
 class TransferFileStatus(BaseModel):
@@ -61,6 +62,7 @@ class TransferFileStatus(BaseModel):
     bytes_received: int
     status: str  # queued, transferring, verifying, completed, failed
     sha256_verified: Optional[bool] = None
+    chunks_received: Optional[List[int]] = None
     missing_chunks: Optional[List[int]] = None
 
 class TransferDetailsResponse(BaseModel):

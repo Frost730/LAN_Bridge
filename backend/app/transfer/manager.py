@@ -124,7 +124,8 @@ class TransferManager:
         receiver_name: str,
         is_folder: bool,
         root_name: str,
-        files_data: List[dict]
+        files_data: List[dict],
+        chunk_size: int = 2097152
     ) -> TransferSession:
         active_files = [
             ActiveFile(
@@ -132,7 +133,8 @@ class TransferManager:
                 filename=fd["filename"],
                 relative_path=fd.get("relative_path", fd["filename"]),
                 size=fd["size"],
-                sha256_expected=fd.get("sha256")
+                sha256_expected=fd.get("sha256"),
+                chunk_size=chunk_size
             )
             for fd in files_data
         ]

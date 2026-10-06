@@ -36,6 +36,7 @@ export interface TransferFileStatus {
   bytes_received: number;
   status: string;
   sha256_verified?: boolean | null;
+  chunks_received?: number[];
   missing_chunks?: number[];
   fileBlob?: File; // For outbound transfers held locally in sender browser
 }

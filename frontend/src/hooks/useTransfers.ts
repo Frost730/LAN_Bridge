@@ -401,12 +401,14 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       }
 
       // 2. Request transfer session from backend
+      const engineConfig = getTransferConfig();
       const session = await api.createTransfer({
         sender_device_id: localDevice.device_id,
         sender_name: localDevice.device_name,
         receiver_device_id: targetDevice.device_id,
         is_folder: isFolder,
         root_name: rootName,
+        chunk_size: engineConfig.chunkSize,
         files: preparedFiles,
       });
 
@@ -445,13 +447,15 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       const totalSize = file.size;
       const totalChunks = Math.max(1, Math.ceil(totalSize / CHUNK_SIZE));
 
-      // Query server for missing chunks (essential for RESUME capability!)
-      let missingChunks: Set<number> | null = null;
+      // Query server for already-received chunks (essential for RESUME capability!)
+      let receivedChunks: Set<number> | null = null;
       try {
         const serverStatus = await api.getTransfer(transferId);
         const serverFile = serverStatus.files.find((f) => f.file_id === item.fileId);
-        if (serverFile && serverFile.missing_chunks) {
-          missingChunks = new Set(serverFile.missing_chunks);
+        if (serverFile && Array.isArray(serverFile.chunks_received) && serverFile.chunks_received.length > 0) {
+          receivedChunks = new Set(serverFile.chunks_received);
+        } else if (serverFile && serverFile.bytes_received === 0) {
+          receivedChunks = new Set();
         }
       } catch {
         // Fallback to sending all chunks
@@ -467,8 +471,8 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
         }
         if (ctrl.cancelled) break;
 
-        // If resume check shows this chunk is already received by server, skip it!
-        if (missingChunks && !missingChunks.has(chunkIdx)) {
+        // If this chunk was ALREADY received on the server, skip it!
+        if (receivedChunks && receivedChunks.has(chunkIdx)) {
           continue;
         }
 

@@ -107,6 +107,7 @@ export const api = {
     receiver_device_id: string;
     is_folder: boolean;
     root_name: string;
+    chunk_size?: number;
     files: Array<{
       file_id: string;
       filename: string;

@@ -79,3 +79,59 @@ async def test_large_file_bounded_memory_streaming(tmp_path, monkeypatch):
 
     # Memory should not have leaked or scaled linearly
     print(f"Memory change during streaming: {memory_diff_mb:.2f} MB")
+
+@pytest.mark.asyncio
+async def test_chunk_size_and_chunks_received_tracking(tmp_path, monkeypatch):
+    temp_dir = tmp_path / "temp2"
+    received_dir = tmp_path / "received2"
+    temp_dir.mkdir()
+    received_dir.mkdir()
+    monkeypatch.setattr(settings, "TEMP_DIR", temp_dir)
+    monkeypatch.setattr(settings, "RECEIVED_DIR", received_dir)
+    monkeypatch.setattr(db, "db_path", tmp_path / "chunk_test.db")
+    await db.init_db()
+
+    manager = TransferManager()
+
+    # 6MB file with 2MB chunk_size = exactly 3 chunks (0, 1, 2)
+    total_size = 6 * 1024 * 1024
+    chunk_size = 2 * 1024 * 1024
+    session = manager.create_transfer(
+        transfer_id="chunk-test-1",
+        sender_device_id="dev-send",
+        sender_name="Sender",
+        receiver_device_id="dev-recv",
+        receiver_name="Receiver",
+        is_folder=False,
+        root_name="data.bin",
+        files_data=[{
+            "file_id": "cf1",
+            "filename": "data.bin",
+            "relative_path": "data.bin",
+            "size": total_size
+        }],
+        chunk_size=chunk_size
+    )
+    manager.accept_transfer("chunk-test-1")
+
+    # Initial state: 0 chunks received, missing chunks should be [0, 1, 2]
+    f_dict = session.files["cf1"].to_dict()
+    assert f_dict["chunks_received"] == []
+    assert f_dict["missing_chunks"] == [0, 1, 2]
+
+    # Write chunk 0 and chunk 2 (simulate out-of-order or partial upload)
+    dummy_chunk = b"X" * chunk_size
+    await manager.write_chunk("chunk-test-1", "cf1", chunk_index=0, offset=0, data=dummy_chunk)
+    await manager.write_chunk("chunk-test-1", "cf1", chunk_index=2, offset=4 * 1024 * 1024, data=dummy_chunk)
+
+    f_dict = session.files["cf1"].to_dict()
+    assert set(f_dict["chunks_received"]) == {0, 2}
+    assert f_dict["missing_chunks"] == [1]
+
+    # Write chunk 1 to finish
+    await manager.write_chunk("chunk-test-1", "cf1", chunk_index=1, offset=2 * 1024 * 1024, data=dummy_chunk)
+    f_dict = session.files["cf1"].to_dict()
+    assert set(f_dict["chunks_received"]) == {0, 1, 2}
+    assert f_dict["missing_chunks"] == []
+    assert session.status == TransferState.COMPLETED
+

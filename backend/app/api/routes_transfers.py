@@ -30,7 +30,8 @@ async def create_transfer(payload: TransferCreatePayload) -> Dict[str, Any]:
         receiver_name="Target Device",
         is_folder=payload.is_folder,
         root_name=payload.root_name,
-        files_data=[f.model_dump() for f in payload.files]
+        files_data=[f.model_dump() for f in payload.files],
+        chunk_size=payload.chunk_size or 2097152
     )
 
     # Check if sender is a trusted device or auto-approval is enabled
@@ -291,7 +292,7 @@ async def upload_chunk(
         "transfer_completed": session.status == TransferState.COMPLETED if session else False
     }
 
-async def delete_file_safely(file_path: str, delay_seconds: int = 180):
+async def delete_file_safely(file_path: str, delay_seconds: int = 1800):
     """
     Safely unlinks/destroys ephemeral files from disk after transfer stream finishes
     and a grace period has passed (settings.AUTO_DELETE_DELAY_SECONDS) to prevent

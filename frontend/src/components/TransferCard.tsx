@@ -68,7 +68,14 @@ export const TransferCard: React.FC<TransferCardProps> = ({
                 </span>
               ) : (
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400 border border-blue-200 dark:border-blue-800 shrink-0">
-                  HTTP LAN 🚀
+                  {typeof window !== 'undefined' &&
+                  (window.location.hostname.includes('render') ||
+                    window.location.hostname.includes('hf.space') ||
+                    !/^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(
+                      window.location.hostname
+                    ))
+                    ? 'HTTP Relay 🌐'
+                    : 'HTTP LAN 🚀'}
                 </span>
               )}
             </div>
