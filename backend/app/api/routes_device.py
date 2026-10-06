@@ -239,6 +239,30 @@ async def get_ice_servers() -> List[Dict[str, Any]]:
         except Exception:
             pass
 
+    # Check for Cloudflare Calls TURN
+    cf_key_id = settings.CLOUDFLARE_TURN_KEY_ID or await db.get_setting("cf_turn_key_id", None)
+    cf_token = settings.CLOUDFLARE_TURN_API_TOKEN or await db.get_setting("cf_turn_token", None)
+    if cf_key_id and cf_token:
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                res = await client.post(
+                    f"https://rtc.live.cloudflare.com/v1/turn/keys/{cf_key_id}/credentials/generate-ice-servers",
+                    headers={"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"},
+                    json={"ttl": 86400}
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    ice = data.get("iceServers")
+                    if isinstance(ice, list):
+                        has_custom_turn = True
+                        servers.extend(ice)
+                    elif isinstance(ice, dict):
+                        has_custom_turn = True
+                        servers.append(ice)
+        except Exception:
+            pass
+
     # If no custom TURN configured, add public community OpenRelay (100% free, zero-config, no card needed)
     if not has_custom_turn:
         servers.append({

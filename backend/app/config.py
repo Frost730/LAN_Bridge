@@ -64,6 +64,8 @@ class Settings:
     TURN_CREDENTIAL: Optional[str] = os.getenv("LANBRIDGE_TURN_CREDENTIAL")
     METERED_APP_NAME: Optional[str] = os.getenv("METERED_APP_NAME")
     METERED_API_KEY: Optional[str] = os.getenv("METERED_API_KEY")
+    CLOUDFLARE_TURN_KEY_ID: Optional[str] = os.getenv("CLOUDFLARE_TURN_KEY_ID")
+    CLOUDFLARE_TURN_API_TOKEN: Optional[str] = os.getenv("CLOUDFLARE_TURN_API_TOKEN")
 
     def ensure_directories(self) -> None:
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
