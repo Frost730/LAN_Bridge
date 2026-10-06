@@ -1,4 +1,4 @@
-import React, { useRef, useState, DragEvent } from 'react';
+import React, { useRef, useState, useEffect, DragEvent } from 'react';
 import { UploadCloud, FolderUp, FileUp, Sparkles } from 'lucide-react';
 
 interface DropzoneProps {
@@ -10,6 +10,18 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelected, disabled = 
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const el = folderInputRef.current;
+    if (el) {
+      el.setAttribute('webkitdirectory', '');
+      el.setAttribute('mozdirectory', '');
+      el.setAttribute('directory', '');
+      (el as any).webkitdirectory = true;
+      (el as any).mozdirectory = true;
+      (el as any).directory = true;
+    }
+  }, []);
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -48,9 +60,11 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelected, disabled = 
       const traverseFileTree = async (item: any, path = ''): Promise<void> => {
         if (item.isFile) {
           const file: File = await new Promise((resolve) => item.file(resolve));
+          const rawRel = path ? `${path}/${file.name}` : file.name;
+          const normalizedRel = rawRel.replace(/\\/g, '/').replace(/^\/+/, '');
           filesArray.push({
             file,
-            relativePath: path ? `${path}/${file.name}` : file.name,
+            relativePath: normalizedRel,
           });
         } else if (item.isDirectory) {
           isDirectoryTransfer = true;
@@ -111,17 +125,29 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelected, disabled = 
   };
 
   const handleFolderInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
     const selected: Array<{ file: File; relativePath: string }> = [];
     let rootName = 'Folder';
 
-    for (let i = 0; i < e.target.files.length; i++) {
-      const file = e.target.files[i];
-      const relPath = file.webkitRelativePath || file.name;
-      selected.push({ file, relativePath: relPath });
-      if (file.webkitRelativePath) {
-        const parts = file.webkitRelativePath.split('/');
-        if (parts.length > 0) rootName = parts[0];
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      const rawRel = file.webkitRelativePath || file.name;
+      const normalizedRel = rawRel.replace(/\\/g, '/').replace(/^\/+/, '');
+      selected.push({ file, relativePath: normalizedRel });
+
+      if (rawRel && rawRel.includes('/')) {
+        const parts = normalizedRel.split('/');
+        if (parts.length > 0 && parts[0]) {
+          rootName = parts[0];
+        }
+      }
+    }
+
+    if (rootName === 'Folder' && selected.length > 0) {
+      const firstRel = selected[0].relativePath;
+      if (firstRel.includes('/')) {
+        rootName = firstRel.split('/')[0];
       }
     }
 
@@ -154,7 +180,11 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelected, disabled = 
         onChange={handleFolderInputChange}
         // @ts-ignore
         webkitdirectory=""
+        // @ts-ignore
         directory=""
+        // @ts-ignore
+        mozdirectory=""
+        multiple
         className="hidden"
       />
 
@@ -176,7 +206,12 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelected, disabled = 
         <button
           type="button"
           disabled={disabled}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => {
+            if (fileInputRef.current) {
+              fileInputRef.current.value = '';
+              fileInputRef.current.click();
+            }
+          }}
           className="flex items-center justify-center space-x-2 px-6 py-3 min-h-[48px] rounded-xl bg-brand-600 hover:bg-brand-500 active:scale-[0.98] text-white font-medium text-sm shadow-md shadow-brand-500/20 transition-all select-none"
         >
           <FileUp className="w-4 h-4" />
@@ -186,7 +221,12 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelected, disabled = 
         <button
           type="button"
           disabled={disabled}
-          onClick={() => folderInputRef.current?.click()}
+          onClick={() => {
+            if (folderInputRef.current) {
+              folderInputRef.current.value = '';
+              folderInputRef.current.click();
+            }
+          }}
           className="flex items-center justify-center space-x-2 px-6 py-3 min-h-[48px] rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-[0.98] dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-medium text-sm border border-slate-200 dark:border-slate-700 transition-all select-none"
         >
           <FolderUp className="w-4 h-4" />

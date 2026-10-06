@@ -407,8 +407,13 @@ class TransferManager:
             if session.is_folder:
                 # Target path preserves relative structure under root folder name
                 safe_root = sanitize_filename(session.root_name)
-                # Combine safe root with relative path
-                combined_rel = f"{safe_root}/{file_obj.relative_path}"
+                rel = file_obj.relative_path.replace("\\", "/").lstrip("/")
+                if rel.startswith(f"{safe_root}/") or rel == safe_root:
+                    combined_rel = rel
+                elif session.root_name and (rel.startswith(f"{session.root_name}/") or rel == session.root_name):
+                    combined_rel = rel
+                else:
+                    combined_rel = f"{safe_root}/{rel}"
                 dest_path = sanitize_relative_path(combined_rel, settings.RECEIVED_DIR)
             else:
                 dest_path = sanitize_relative_path(file_obj.filename, settings.RECEIVED_DIR)
@@ -436,7 +441,13 @@ class TransferManager:
         try:
             if session.is_folder:
                 safe_root = sanitize_filename(session.root_name)
-                combined_rel = f"{safe_root}/{file_obj.relative_path}"
+                rel = file_obj.relative_path.replace("\\", "/").lstrip("/")
+                if rel.startswith(f"{safe_root}/") or rel == safe_root:
+                    combined_rel = rel
+                elif session.root_name and (rel.startswith(f"{session.root_name}/") or rel == session.root_name):
+                    combined_rel = rel
+                else:
+                    combined_rel = f"{safe_root}/{rel}"
                 dest_path = sanitize_relative_path(combined_rel, settings.RECEIVED_DIR)
             else:
                 dest_path = sanitize_relative_path(file_obj.filename, settings.RECEIVED_DIR)
