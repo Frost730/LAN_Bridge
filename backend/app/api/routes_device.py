@@ -190,3 +190,51 @@ async def restart_server():
 
     threading.Thread(target=_do_restart, daemon=True).start()
     return {"status": "restarting", "message": "LANBridge server is restarting..."}
+
+@router.get("/ice-servers")
+async def get_ice_servers() -> List[Dict[str, Any]]:
+    # Baseline public STUN servers for local / permissive NATs
+    servers: List[Dict[str, Any]] = [
+        {
+            "urls": [
+                "stun:stun.l.google.com:19302",
+                "stun:stun1.l.google.com:19302",
+                "stun:stun2.l.google.com:19302",
+                "stun:stun.cloudflare.com:3478",
+                "stun:global.stun.twilio.com:3478",
+            ]
+        }
+    ]
+
+    # Check for static TURN configuration
+    turn_url = settings.TURN_URL or await db.get_setting("turn_url", None)
+    turn_username = settings.TURN_USERNAME or await db.get_setting("turn_username", None)
+    turn_credential = settings.TURN_CREDENTIAL or await db.get_setting("turn_credential", None)
+
+    if turn_url and turn_username and turn_credential:
+        urls = [u.strip() for u in turn_url.split(",") if u.strip()]
+        servers.append({
+            "urls": urls,
+            "username": turn_username,
+            "credential": turn_credential
+        })
+
+    # Check for Metered dynamic credentials API
+    metered_api_key = settings.METERED_API_KEY or await db.get_setting("metered_api_key", None)
+    metered_app = settings.METERED_APP_NAME or await db.get_setting("metered_app_name", None)
+    if metered_api_key and metered_app:
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                res = await client.get(
+                    f"https://{metered_app}.metered.ca/api/v1/turn/credentials?apiKey={metered_api_key}"
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    if isinstance(data, list):
+                        servers.extend(data)
+        except Exception:
+            pass
+
+    return servers
+

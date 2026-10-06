@@ -71,9 +71,26 @@ class WebRTCManager {
 
   private onProgressCallback: ((update: WebRTCProgressUpdate) => void) | null = null;
   private onFileReceivedCallback: WebRTCFileReceivedCallback | null = null;
+  private iceServers: RTCIceServer[] = ICE_SERVERS;
 
   constructor() {
     this.setupSignalingListeners();
+    this.fetchIceServers();
+  }
+
+  private async fetchIceServers() {
+    try {
+      const res = await fetch('/api/ice-servers');
+      if (res.ok) {
+        const servers = await res.json();
+        if (Array.isArray(servers) && servers.length > 0) {
+          this.iceServers = servers;
+          console.log('[WebRTC] Loaded ICE/TURN servers:', servers.length);
+        }
+      }
+    } catch {
+      // Fallback to static STUN servers
+    }
   }
 
   public setCallbacks(
@@ -136,7 +153,7 @@ class WebRTCManager {
     }
 
     const pc = new RTCPeerConnection({
-      iceServers: ICE_SERVERS,
+      iceServers: this.iceServers,
       iceCandidatePoolSize: 10,
     });
 
@@ -192,7 +209,7 @@ class WebRTCManager {
   }
 
   // Sender establishes connection and opens data channel
-  public async connectToPeer(targetDeviceId: string, timeoutMs = 8000): Promise<RTCDataChannel> {
+  public async connectToPeer(targetDeviceId: string, timeoutMs = 12000): Promise<RTCDataChannel> {
     const existingChannel = this.dataChannels.get(targetDeviceId);
     if (existingChannel && existingChannel.readyState === 'open') {
       return existingChannel;

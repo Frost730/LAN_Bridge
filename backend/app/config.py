@@ -57,6 +57,13 @@ class Settings:
     AUTO_DELETE_DELAY_SECONDS: int = int(os.getenv("AUTO_DELETE_DELAY_SECONDS", "1800"))
     AUTO_CLEANUP_HOURS: int = int(os.getenv("AUTO_CLEANUP_HOURS", "1"))
 
+    # WebRTC TURN Server settings (for cross-network NAT traversal)
+    TURN_URL: Optional[str] = os.getenv("LANBRIDGE_TURN_URL")
+    TURN_USERNAME: Optional[str] = os.getenv("LANBRIDGE_TURN_USERNAME")
+    TURN_CREDENTIAL: Optional[str] = os.getenv("LANBRIDGE_TURN_CREDENTIAL")
+    METERED_APP_NAME: Optional[str] = os.getenv("METERED_APP_NAME")
+    METERED_API_KEY: Optional[str] = os.getenv("METERED_API_KEY")
+
     def ensure_directories(self) -> None:
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.RECEIVED_DIR.mkdir(parents=True, exist_ok=True)

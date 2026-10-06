@@ -191,10 +191,10 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       const targetDeviceId = files[0].targetDeviceId;
 
       try {
-        // 1. Try WebRTC P2P DataChannel connection first (6.5s timeout for mobile/cross-network ICE gathering)
+        // 1. Try WebRTC P2P DataChannel connection first (12s timeout for mobile/cross-network ICE gathering)
         let webrtcSuccess = false;
         try {
-          const channel = await webrtcManager.connectToPeer(targetDeviceId, 6500);
+          const channel = await webrtcManager.connectToPeer(targetDeviceId, 12000);
           if (channel && channel.readyState === 'open') {
             const ctrl = activeControlRef.current.get(transferId) || { paused: false, cancelled: false };
             if (ctrl.cancelled) {
