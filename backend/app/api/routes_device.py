@@ -80,9 +80,20 @@ async def list_connected_devices(request: Request, device_id: Optional[str] = No
 async def list_trusted_devices() -> List[Dict[str, Any]]:
     return await db.get_trusted_devices()
 
+@router.post("/devices/trusted")
+async def add_trusted_device(payload: Dict[str, str]) -> Dict[str, Any]:
+    device_id = payload.get("device_id")
+    device_name = payload.get("device_name", "Trusted Device")
+    if not device_id:
+        raise HTTPException(status_code=400, detail="device_id is required")
+    await db.trust_device(device_id, device_name)
+    await ws_manager.broadcast_peer_list()
+    return {"status": "ok", "device_id": device_id, "device_name": device_name}
+
 @router.delete("/devices/trusted/{device_id}")
 async def remove_trusted_device(device_id: str) -> Dict[str, Any]:
     await db.remove_trusted_device(device_id)
+    await ws_manager.broadcast_peer_list()
     return {"status": "ok", "device_id": device_id}
 
 @router.post("/devices/{device_id}/disconnect")

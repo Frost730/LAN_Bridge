@@ -568,9 +568,18 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
   };
 
   // User Actions
-  const acceptIncoming = async (transferId: string) => {
+  const acceptIncoming = async (transferId: string, trustDevice = false) => {
     try {
-      await api.acceptTransfer(transferId);
+      const currentIncoming = incomingTransfer;
+      await api.acceptTransfer(transferId, trustDevice);
+      if (trustDevice && currentIncoming?.sender_device_id) {
+        try {
+          await api.addTrustedDevice({
+            device_id: currentIncoming.sender_device_id,
+            device_name: currentIncoming.sender_name || 'Trusted Device',
+          });
+        } catch {}
+      }
       setIncomingTransfer(null);
       refreshTransfers();
     } catch (e) {

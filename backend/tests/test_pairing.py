@@ -50,3 +50,56 @@ def test_session_lifecycle():
     # Revoke
     tm.revoke_session(session_token)
     assert tm.validate_session(session_token) is None
+
+@pytest.mark.asyncio
+async def test_trusted_device_api_and_auto_accept(tmp_path, monkeypatch):
+    from httpx import ASGITransport, AsyncClient
+    from app.main import app
+    from app.database.db import db
+    from app.config import settings
+
+    monkeypatch.setattr(db, "db_path", tmp_path / "test_trusted.db")
+    await db.init_db()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Add trusted device
+        resp = await client.post("/api/devices/trusted", json={
+            "device_id": "phone-trust-1",
+            "device_name": "Alice iPhone"
+        })
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+        # 2. List trusted devices
+        resp = await client.get("/api/devices/trusted")
+        assert resp.status_code == 200
+        devices = resp.json()
+        assert any(d["device_id"] == "phone-trust-1" for d in devices)
+
+        # 3. Create transfer from trusted device -> should be auto-accepted (transferring)
+        resp = await client.post("/api/transfers", json={
+            "sender_device_id": "phone-trust-1",
+            "sender_name": "Alice iPhone",
+            "receiver_device_id": "pc-receiver-1",
+            "is_folder": False,
+            "root_name": "photo.jpg",
+            "files": [{
+                "file_id": "f1",
+                "filename": "photo.jpg",
+                "relative_path": "photo.jpg",
+                "size": 100
+            }]
+        })
+        assert resp.status_code == 200
+        # Should be auto-accepted into transferring state because sender is trusted!
+        assert resp.json()["status"] == "transferring"
+
+        # 4. Remove trusted device
+        resp = await client.delete("/api/devices/trusted/phone-trust-1")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+
+        # 5. Verify no longer trusted
+        resp = await client.get("/api/devices/trusted")
+        assert not any(d["device_id"] == "phone-trust-1" for d in resp.json())

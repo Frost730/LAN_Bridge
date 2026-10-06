@@ -35,6 +35,13 @@ export const api = {
   getTrustedDevices: () =>
     fetch(`${BASE_URL}/api/devices/trusted`).then((r) => handleResponse<TrustedDevice[]>(r)),
 
+  addTrustedDevice: (payload: { device_id: string; device_name: string }) =>
+    fetch(`${BASE_URL}/api/devices/trusted`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).then((r) => handleResponse<{ status: string; device_id: string }>(r)),
+
   removeTrustedDevice: (deviceId: string) =>
     fetch(`${BASE_URL}/api/devices/trusted/${deviceId}`, { method: 'DELETE' }).then((r) =>
       handleResponse<{ status: string }>(r)
@@ -122,8 +129,8 @@ export const api = {
   getTransfer: (transferId: string) =>
     fetch(`${BASE_URL}/api/transfers/${transferId}`).then((r) => handleResponse<TransferItem>(r)),
 
-  acceptTransfer: (transferId: string) =>
-    fetch(`${BASE_URL}/api/transfers/${transferId}/accept`, { method: 'POST' }).then((r) =>
+  acceptTransfer: (transferId: string, trustDevice = false) =>
+    fetch(`${BASE_URL}/api/transfers/${transferId}/accept?trust_device=${trustDevice}`, { method: 'POST' }).then((r) =>
       handleResponse<TransferItem>(r)
     ),
 

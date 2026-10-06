@@ -33,7 +33,24 @@ async def create_transfer(payload: TransferCreatePayload) -> Dict[str, Any]:
         files_data=[f.model_dump() for f in payload.files]
     )
 
-    # Notify receiver via WebSocket
+    # Check if sender is a trusted device or auto-approval is enabled
+    is_trusted = await db.is_trusted_device(payload.sender_device_id)
+    require_approval = await db.get_setting("require_approval", True)
+
+    if is_trusted or not require_approval:
+        transfer_manager.accept_transfer(transfer_id)
+        # Notify sender to start streaming immediately
+        await ws_manager.send_to_device(payload.sender_device_id, {
+            "type": "transfer_accepted",
+            "transfer_id": transfer_id
+        })
+        await ws_manager.broadcast({
+            "type": "transfer_created",
+            "transfer": session.to_dict()
+        })
+        return session.to_dict()
+
+    # Notify receiver via WebSocket for approval
     await ws_manager.send_to_device(payload.receiver_device_id, {
         "type": "transfer_requested",
         "transfer": session.to_dict()
@@ -67,10 +84,15 @@ async def get_transfer(transfer_id: str) -> Dict[str, Any]:
     return session.to_dict()
 
 @router.post("/{transfer_id}/accept")
-async def accept_transfer(transfer_id: str) -> Dict[str, Any]:
+async def accept_transfer(transfer_id: str, trust_device: bool = Query(False)) -> Dict[str, Any]:
     session = transfer_manager.get_transfer(transfer_id)
     if not session:
         raise HTTPException(status_code=404, detail="Transfer not found")
+
+    # If trust_device requested, register sender as trusted device
+    if trust_device and session.sender_device_id:
+        await db.trust_device(session.sender_device_id, session.sender_name)
+        await ws_manager.broadcast_peer_list()
 
     # Idempotent check: if already accepted / transferring, avoid duplicate notification
     if session.status == TransferState.TRANSFERRING:

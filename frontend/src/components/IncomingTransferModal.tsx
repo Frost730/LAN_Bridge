@@ -1,11 +1,11 @@
 import React from 'react';
-import { DownloadCloud, Check, X, Folder, File, AlertTriangle } from 'lucide-react';
+import { DownloadCloud, Check, X, Folder, File, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { TransferItem } from '../types';
 import { formatBytes } from '../utils/formatters';
 
 interface IncomingTransferModalProps {
   transfer: TransferItem;
-  onAccept: (transferId: string) => void;
+  onAccept: (transferId: string, trustDevice?: boolean) => void;
   onReject: (transferId: string) => void;
 }
 
@@ -15,11 +15,12 @@ export const IncomingTransferModal: React.FC<IncomingTransferModalProps> = ({
   onReject,
 }) => {
   const [isProcessing, setIsProcessing] = React.useState(false);
+  const [trustDevice, setTrustDevice] = React.useState(false);
 
   const handleAccept = () => {
     if (isProcessing) return;
     setIsProcessing(true);
-    onAccept(transfer.transfer_id);
+    onAccept(transfer.transfer_id, trustDevice);
   };
 
   const handleReject = () => {
@@ -73,7 +74,21 @@ export const IncomingTransferModal: React.FC<IncomingTransferModalProps> = ({
           </div>
         </div>
 
-        <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center mb-6">
+        {/* Trust Device Option */}
+        <label className="flex items-center space-x-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60 cursor-pointer select-none mb-4 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+          <input
+            type="checkbox"
+            checked={trustDevice}
+            onChange={(e) => setTrustDevice(e.target.checked)}
+            className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500 border-slate-300 dark:border-slate-600 accent-brand-600 cursor-pointer shrink-0"
+          />
+          <div className="flex items-center space-x-1.5 text-xs text-slate-700 dark:text-slate-300 font-medium min-w-0">
+            <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+            <span className="truncate">Trust this device (auto-accept future transfers)</span>
+          </div>
+        </label>
+
+        <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center mb-5">
           <AlertTriangle className="w-3.5 h-3.5 mr-1.5 text-amber-500 shrink-0" />
           <span>Direct transfer over Wi-Fi / Ethernet</span>
         </div>
