@@ -176,6 +176,18 @@ python run.py
 
 ---
 
+## 🛡️ Privacy & Data Handling
+
+LANBridge is designed with uncompromising privacy principles:
+
+- **Zero Telemetry or Analytics**: There are no tracking scripts, analytics SDKs, third-party cookies, or telemetry beacons anywhere in the application.
+- **No Cloud File Storage**: Transferred files stream directly between sender and receiver in real time. Your files are never cached, logged, or uploaded to any third-party cloud server.
+- **Local Client Storage**: Device nicknames, trusted device tokens, room preferences, and themes reside strictly inside your browser's private `localStorage`.
+- **Ephemeral Memory**: Temporary room codes, active transfer states, and real-time chat messages are stored only in volatile server RAM and automatically expire when closed.
+- **100% Offline Capable**: All web assets, icons, fonts, and scripts are bundled locally inside the project. On local Wi-Fi or Ethernet networks, LANBridge functions completely air-gapped without an internet connection.
+
+---
+
 ## 🧪 Automated Testing
 
 LANBridge includes a comprehensive test suite covering security, chunking, resume mechanics, cancellation cleanup, and streaming integrity:
