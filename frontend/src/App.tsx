@@ -51,6 +51,7 @@ export function App() {
     pauseTransfer,
     resumeTransfer,
     cancelTransfer,
+    deleteTransfer,
   } = useTransfers(localDevice, handleNotification);
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
@@ -170,6 +171,7 @@ export function App() {
             onPauseTransfer={pauseTransfer}
             onResumeTransfer={resumeTransfer}
             onCancelTransfer={cancelTransfer}
+            onDeleteTransfer={deleteTransfer}
             onOpenConnect={() => setIsConnectModalOpen(true)}
             onLeaveRoom={leaveRoom}
             onChatWithDevice={handleChatWithDevice}
@@ -208,6 +210,7 @@ export function App() {
             onPauseTransfer={pauseTransfer}
             onResumeTransfer={resumeTransfer}
             onCancelTransfer={cancelTransfer}
+            onDeleteTransfer={deleteTransfer}
             onNavigateHome={() => setCurrentTab('dashboard')}
           />
         )}

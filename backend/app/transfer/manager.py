@@ -193,6 +193,13 @@ class TransferManager:
         self.cleanup_temp_files(session)
         return True
 
+    def delete_transfer(self, transfer_id: str) -> bool:
+        session = self._transfers.pop(transfer_id, None)
+        if session:
+            self.cleanup_temp_files(session)
+            return True
+        return False
+
     async def write_chunk(
         self,
         transfer_id: str,

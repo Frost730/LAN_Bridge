@@ -10,7 +10,8 @@ import {
   Clock,
   Download,
   ShieldCheck,
-  RotateCcw
+  RotateCcw,
+  Trash2,
 } from 'lucide-react';
 import { TransferItem } from '../types';
 import { formatBytes, formatSpeed, formatETA } from '../utils/formatters';
@@ -20,6 +21,7 @@ interface TransferCardProps {
   onPause: (transferId: string) => void;
   onResume: (transferId: string) => void;
   onCancel: (transferId: string) => void;
+  onDelete?: (transferId: string) => void;
 }
 
 export const TransferCard: React.FC<TransferCardProps> = ({
@@ -27,6 +29,7 @@ export const TransferCard: React.FC<TransferCardProps> = ({
   onPause,
   onResume,
   onCancel,
+  onDelete,
 }) => {
   const isCompleted = transfer.status === 'completed';
   const isFailed = transfer.status === 'failed';
@@ -128,6 +131,16 @@ export const TransferCard: React.FC<TransferCardProps> = ({
               <Download className="w-3.5 h-3.5" />
               <span>Save</span>
             </a>
+          )}
+
+          {onDelete && (isCompleted || isFailed || !isTransferring) && (
+            <button
+              onClick={() => onDelete(transfer.transfer_id)}
+              className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+              title="Delete from list"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
           )}
         </div>
       </div>

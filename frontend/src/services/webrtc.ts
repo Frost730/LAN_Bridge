@@ -226,8 +226,14 @@ class WebRTCManager {
     }
   }
 
-  // Handle incoming control messages (metadata, completion)
+  // Handle incoming control messages (metadata, completion, cancellation)
   private async handleControlMessage(fromDeviceId: string, msg: any) {
+    if (msg.type === 'file_cancel') {
+      const key = `${msg.transfer_id}:${msg.file_id}`;
+      this.receivingFiles.delete(key);
+      return;
+    }
+
     if (msg.type === 'file_start') {
       const key = `${msg.transfer_id}:${msg.file_id}`;
       this.receivingFiles.set(key, {
@@ -315,7 +321,8 @@ class WebRTCManager {
     relativePath: string,
     sha256: string,
     chunkSize = 64 * 1024, // 64KB optimal chunk for WebRTC DataChannel
-    onProgress?: (bytesSent: number, total: number) => void
+    onProgress?: (bytesSent: number, total: number) => void,
+    ctrlCheck?: () => { paused: boolean; cancelled: boolean }
   ): Promise<void> {
     const totalSize = file.size;
     const totalChunks = Math.max(1, Math.ceil(totalSize / chunkSize));
@@ -354,6 +361,27 @@ class WebRTCManager {
     };
 
     for (let i = 0; i < totalChunks; i++) {
+      // Check pause / cancel control
+      if (ctrlCheck) {
+        const ctrl = ctrlCheck();
+        if (ctrl.cancelled) {
+          console.log(`[WebRTC] Transfer ${transferId} cancelled by user, aborting send.`);
+          try {
+            channel.send(JSON.stringify({ type: 'file_cancel', transfer_id: transferId, file_id: fileId }));
+          } catch {}
+          return;
+        }
+        while (ctrl.paused && !ctrl.cancelled) {
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        if (ctrl.cancelled) {
+          try {
+            channel.send(JSON.stringify({ type: 'file_cancel', transfer_id: transferId, file_id: fileId }));
+          } catch {}
+          return;
+        }
+      }
+
       const offset = i * chunkSize;
       const end = Math.min(totalSize, offset + chunkSize);
       const sliceBlob = file.slice(offset, end);

@@ -91,9 +91,19 @@ class ConnectionManager:
         peer = ConnectedPeer(device_id, device_name, device_type, os_name, browser, ip, websocket, is_cloud=cloud_active)
         self._connections[websocket] = peer
 
-        if device_id not in self._device_websockets:
+        # Close any previous superseded websocket for this device_id to avoid duplicate message delivery
+        if device_id in self._device_websockets:
+            old_sockets = list(self._device_websockets[device_id])
+            for old_ws in old_sockets:
+                if old_ws != websocket:
+                    self._connections.pop(old_ws, None)
+                    try:
+                        await old_ws.close(code=1000, reason="Superseded by new connection")
+                    except Exception:
+                        pass
             self._device_websockets[device_id] = set()
-        self._device_websockets[device_id].add(websocket)
+
+        self._device_websockets[device_id] = {websocket}
 
         if initial_room:
             self.join_room(device_id, initial_room)

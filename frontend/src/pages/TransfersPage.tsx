@@ -9,6 +9,7 @@ interface TransfersPageProps {
   onPauseTransfer: (id: string) => void;
   onResumeTransfer: (id: string) => void;
   onCancelTransfer: (id: string) => void;
+  onDeleteTransfer?: (id: string) => void;
   onNavigateHome: () => void;
 }
 
@@ -17,6 +18,7 @@ export const TransfersPage: React.FC<TransfersPageProps> = ({
   onPauseTransfer,
   onResumeTransfer,
   onCancelTransfer,
+  onDeleteTransfer,
   onNavigateHome,
 }) => {
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
@@ -100,6 +102,7 @@ export const TransfersPage: React.FC<TransfersPageProps> = ({
               onPause={onPauseTransfer}
               onResume={onResumeTransfer}
               onCancel={onCancelTransfer}
+              onDelete={onDeleteTransfer}
             />
           ))}
         </div>

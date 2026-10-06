@@ -26,6 +26,9 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
   // Transfer state flags for cancellation / pause control
   const activeControlRef = useRef<Map<string, { paused: boolean; cancelled: boolean }>>(new Map());
 
+  // Set of transfer IDs currently executing an active upload loop (prevents duplicate runs)
+  const activeSendingTransfersRef = useRef<Set<string>>(new Set());
+
   // Load existing transfers
   const refreshTransfers = useCallback(async () => {
     try {
@@ -131,76 +134,102 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
 
     const unsubAccepted = wsClient.on('transfer_accepted', async (data) => {
       const transferId = data.transfer_id;
+      if (!transferId) return;
+
+      // Duplicate prevention: if this transfer is already actively streaming, ignore duplicate notifications
+      if (activeSendingTransfersRef.current.has(transferId)) {
+        return;
+      }
+
       const files = localFilesRef.current.get(transferId);
       if (!files || files.length === 0) return;
 
-      const targetDeviceId = files[0].targetDeviceId;
-
-      // 1. Try WebRTC P2P DataChannel connection first
-      let webrtcSuccess = false;
-      try {
-        const channel = await webrtcManager.connectToPeer(targetDeviceId, 3000);
-        if (channel && channel.readyState === 'open') {
-          webrtcSuccess = true;
-          setTransfers((prev) =>
-            prev.map((t) => (t.transfer_id === transferId ? { ...t, transport: 'webrtc' } : t))
-          );
-
-          const engineConfig = getTransferConfig();
-          const webrtcChunkSize = engineConfig.performanceMode ? 128 * 1024 : 64 * 1024;
-          let lastProgressTime = 0;
-
-          for (const item of files) {
-            await webrtcManager.sendFileOverDataChannel(
-              channel,
-              transferId,
-              item.fileId,
-              item.fileObj,
-              item.relativePath,
-              item.sha256 || '',
-              webrtcChunkSize,
-              (sent, total) => {
-                const now = Date.now();
-                const pct = Math.min(100, Math.round((sent / total) * 100));
-                // Throttled UI updates in performance mode to eliminate CPU rendering bottlenecks
-                if (pct === 100 || !engineConfig.performanceMode || now - lastProgressTime > 150) {
-                  lastProgressTime = now;
-                  setTransfers((prev) =>
-                    prev.map((t) =>
-                      t.transfer_id === transferId
-                        ? {
-                            ...t,
-                            bytes_transferred: sent,
-                            progress_percentage: pct,
-                            status: pct === 100 ? 'completed' : 'transferring',
-                            transport: 'webrtc',
-                          }
-                        : t
-                    )
-                  );
-                }
-              }
-            );
-          }
-          localFilesRef.current.delete(transferId);
-          activeControlRef.current.delete(transferId);
-          return;
-        }
-      } catch (err) {
-        console.log('[Transport] WebRTC P2P skipped or timed out, seamlessly using HTTP streaming:', err);
+      // Mark this transfer as actively transmitting
+      activeSendingTransfersRef.current.add(transferId);
+      if (!activeControlRef.current.has(transferId)) {
+        activeControlRef.current.set(transferId, { paused: false, cancelled: false });
       }
 
-      // 2. Seamless Fallback: HTTP chunk streaming
-      if (!webrtcSuccess) {
-        setTransfers((prev) =>
-          prev.map((t) => (t.transfer_id === transferId ? { ...t, transport: 'http' } : t))
-        );
-        startChunkUpload(transferId, files);
+      const targetDeviceId = files[0].targetDeviceId;
+
+      try {
+        // 1. Try WebRTC P2P DataChannel connection first
+        let webrtcSuccess = false;
+        try {
+          const channel = await webrtcManager.connectToPeer(targetDeviceId, 2500);
+          if (channel && channel.readyState === 'open') {
+            const ctrl = activeControlRef.current.get(transferId) || { paused: false, cancelled: false };
+            if (ctrl.cancelled) {
+              return;
+            }
+
+            webrtcSuccess = true;
+            setTransfers((prev) =>
+              prev.map((t) => (t.transfer_id === transferId ? { ...t, transport: 'webrtc', status: 'transferring' } : t))
+            );
+
+            const engineConfig = getTransferConfig();
+            const webrtcChunkSize = engineConfig.performanceMode ? 128 * 1024 : 64 * 1024;
+            let lastProgressTime = 0;
+
+            for (const item of files) {
+              if (ctrl.cancelled) break;
+
+              await webrtcManager.sendFileOverDataChannel(
+                channel,
+                transferId,
+                item.fileId,
+                item.fileObj,
+                item.relativePath,
+                item.sha256 || '',
+                webrtcChunkSize,
+                (sent, total) => {
+                  const now = Date.now();
+                  const pct = Math.min(100, Math.round((sent / total) * 100));
+                  if (pct === 100 || !engineConfig.performanceMode || now - lastProgressTime > 150) {
+                    lastProgressTime = now;
+                    setTransfers((prev) =>
+                      prev.map((t) =>
+                        t.transfer_id === transferId
+                          ? {
+                              ...t,
+                              bytes_transferred: sent,
+                              progress_percentage: pct,
+                              status: pct === 100 ? 'completed' : 'transferring',
+                              transport: 'webrtc',
+                            }
+                          : t
+                      )
+                    );
+                  }
+                },
+                () => activeControlRef.current.get(transferId) || { paused: false, cancelled: false }
+              );
+            }
+            return;
+          }
+        } catch (err) {
+          console.log('[Transport] WebRTC P2P skipped or timed out, seamlessly using HTTP streaming');
+        }
+
+        // 2. Seamless Fallback: HTTP chunk streaming
+        const ctrl = activeControlRef.current.get(transferId) || { paused: false, cancelled: false };
+        if (!ctrl.cancelled && !webrtcSuccess) {
+          setTransfers((prev) =>
+            prev.map((t) => (t.transfer_id === transferId ? { ...t, transport: 'http', status: 'transferring' } : t))
+          );
+          await startChunkUpload(transferId, files);
+        }
+      } finally {
+        activeSendingTransfersRef.current.delete(transferId);
+        localFilesRef.current.delete(transferId);
+        activeControlRef.current.delete(transferId);
       }
     });
 
     const unsubRejected = wsClient.on('transfer_rejected', (data) => {
       const transferId = data.transfer_id;
+      activeSendingTransfersRef.current.delete(transferId);
       localFilesRef.current.delete(transferId);
       activeControlRef.current.delete(transferId);
       refreshTransfers();
@@ -233,7 +262,18 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       if (data.transfer) {
         const ctrl = activeControlRef.current.get(data.transfer.transfer_id);
         if (ctrl) ctrl.cancelled = true;
+        activeSendingTransfersRef.current.delete(data.transfer.transfer_id);
+        localFilesRef.current.delete(data.transfer.transfer_id);
         refreshTransfers();
+      }
+    });
+
+    const unsubDeleted = wsClient.on('transfer_deleted', (data) => {
+      if (data.transfer_id) {
+        activeSendingTransfersRef.current.delete(data.transfer_id);
+        localFilesRef.current.delete(data.transfer_id);
+        activeControlRef.current.delete(data.transfer_id);
+        setTransfers((prev) => prev.filter((t) => t.transfer_id !== data.transfer_id));
       }
     });
 
@@ -247,6 +287,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       unsubPaused();
       unsubResumed();
       unsubCancelled();
+      unsubDeleted();
     };
   }, [localDeviceId, refreshTransfers]);
 
@@ -299,8 +340,11 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       localFilesRef.current.set(session.transfer_id, fileMappings);
       activeControlRef.current.set(session.transfer_id, { paused: false, cancelled: false });
 
-      // If receiver is host and we are in same browser, acceptance can happen immediately
-      setTransfers((prev) => [session, ...prev]);
+      // Immediate optimistic update
+      setTransfers((prev) => {
+        const exists = prev.some((t) => t.transfer_id === session.transfer_id);
+        return exists ? prev : [session, ...prev];
+      });
 
       return session;
     } finally {
@@ -344,7 +388,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
 
         // Check pause state: loop wait
         while (ctrl.paused && !ctrl.cancelled) {
-          await new Promise((r) => setTimeout(r, 500));
+          await new Promise((r) => setTimeout(r, 200));
         }
         if (ctrl.cancelled) break;
 
@@ -359,9 +403,15 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
 
         try {
           await api.uploadChunk(transferId, item.fileId, chunkIdx, offset, chunkBlob);
-        } catch (err) {
+        } catch (err: any) {
           console.error(`Error uploading chunk ${chunkIdx} of ${file.name}:`, err);
-          await new Promise((r) => setTimeout(r, 1000));
+          if (ctrl.cancelled) break;
+          const msg = String(err?.message || '');
+          if (msg.includes('cancelled') || msg.includes('not found') || msg.includes('400')) {
+            ctrl.cancelled = true;
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 500));
         }
       }
     };
@@ -371,7 +421,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     const worker = async () => {
       while (nextFileIndex < files.length && !ctrl.cancelled) {
         const fileToUpload = files[nextFileIndex++];
-        if (fileToUpload) {
+        if (fileToUpload && !ctrl.cancelled) {
           await uploadSingleFile(fileToUpload);
         }
       }
@@ -380,8 +430,6 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     const workerPool = Array.from({ length: CONCURRENCY }, () => worker());
     await Promise.all(workerPool);
 
-    localFilesRef.current.delete(transferId);
-    activeControlRef.current.delete(transferId);
     refreshTransfers();
   };
 
@@ -407,41 +455,93 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
   };
 
   const pauseTransfer = async (transferId: string) => {
+    // 1. Immediately signal pause locally
     const ctrl = activeControlRef.current.get(transferId);
-    if (ctrl) ctrl.paused = true;
+    if (ctrl) {
+      ctrl.paused = true;
+    }
+    // 2. Optimistic UI update
+    setTransfers((prev) =>
+      prev.map((t) => (t.transfer_id === transferId ? { ...t, status: 'paused' } : t))
+    );
     try {
       await api.pauseTransfer(transferId);
-      refreshTransfers();
     } catch (e) {
       console.error('Failed to pause transfer:', e);
     }
+    refreshTransfers();
   };
 
   const resumeTransfer = async (transferId: string) => {
+    // 1. Unpause local control
     const ctrl = activeControlRef.current.get(transferId);
-    if (ctrl) ctrl.paused = false;
+    if (ctrl) {
+      ctrl.paused = false;
+    }
+    // 2. Optimistic UI update
+    setTransfers((prev) =>
+      prev.map((t) => (t.transfer_id === transferId ? { ...t, status: 'transferring' } : t))
+    );
     try {
       await api.resumeTransfer(transferId);
       const files = localFilesRef.current.get(transferId);
-      if (files) {
-        startChunkUpload(transferId, files);
+      if (files && !activeSendingTransfersRef.current.has(transferId)) {
+        activeSendingTransfersRef.current.add(transferId);
+        startChunkUpload(transferId, files).finally(() => {
+          activeSendingTransfersRef.current.delete(transferId);
+        });
       }
-      refreshTransfers();
     } catch (e) {
       console.error('Failed to resume transfer:', e);
     }
+    refreshTransfers();
   };
 
   const cancelTransfer = async (transferId: string) => {
+    // 1. Immediately abort running loops
     const ctrl = activeControlRef.current.get(transferId);
-    if (ctrl) ctrl.cancelled = true;
+    if (ctrl) {
+      ctrl.cancelled = true;
+    }
+    activeSendingTransfersRef.current.delete(transferId);
     localFilesRef.current.delete(transferId);
-    activeControlRef.current.delete(transferId);
+
+    // 2. Immediate optimistic update in UI
+    setTransfers((prev) =>
+      prev.map((t) =>
+        t.transfer_id === transferId
+          ? { ...t, status: 'cancelled', error_message: 'Cancelled by user' }
+          : t
+      )
+    );
+
+    // 3. Notify backend
     try {
       await api.cancelTransfer(transferId);
-      refreshTransfers();
     } catch (e) {
       console.error('Failed to cancel transfer:', e);
+    }
+    refreshTransfers();
+  };
+
+  const deleteTransfer = async (transferId: string) => {
+    // 1. Abort any active sending
+    const ctrl = activeControlRef.current.get(transferId);
+    if (ctrl) {
+      ctrl.cancelled = true;
+    }
+    activeSendingTransfersRef.current.delete(transferId);
+    localFilesRef.current.delete(transferId);
+    activeControlRef.current.delete(transferId);
+
+    // 2. Immediate removal from UI
+    setTransfers((prev) => prev.filter((t) => t.transfer_id !== transferId));
+
+    // 3. Notify backend
+    try {
+      await api.deleteTransfer(transferId);
+    } catch (e) {
+      console.error('Failed to delete transfer:', e);
     }
   };
 
@@ -455,6 +555,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     pauseTransfer,
     resumeTransfer,
     cancelTransfer,
+    deleteTransfer,
     refreshTransfers,
   };
 }

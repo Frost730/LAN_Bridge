@@ -14,6 +14,20 @@ export const IncomingTransferModal: React.FC<IncomingTransferModalProps> = ({
   onAccept,
   onReject,
 }) => {
+  const [isProcessing, setIsProcessing] = React.useState(false);
+
+  const handleAccept = () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    onAccept(transfer.transfer_id);
+  };
+
+  const handleReject = () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    onReject(transfer.transfer_id);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl max-w-md w-full p-6 pb-safe sm:pb-6 shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col">
@@ -68,8 +82,9 @@ export const IncomingTransferModal: React.FC<IncomingTransferModalProps> = ({
         <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() => onReject(transfer.transfer_id)}
-            className="flex items-center justify-center space-x-2 px-4 py-3 min-h-[48px] rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm font-semibold transition-all select-none active:scale-[0.98]"
+            disabled={isProcessing}
+            onClick={handleReject}
+            className="flex items-center justify-center space-x-2 px-4 py-3 min-h-[48px] rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm font-semibold transition-all select-none active:scale-[0.98] disabled:opacity-50"
           >
             <X className="w-4 h-4 text-rose-500" />
             <span>Reject</span>
@@ -77,11 +92,18 @@ export const IncomingTransferModal: React.FC<IncomingTransferModalProps> = ({
 
           <button
             type="button"
-            onClick={() => onAccept(transfer.transfer_id)}
-            className="flex items-center justify-center space-x-2 px-4 py-3 min-h-[48px] rounded-xl bg-brand-600 hover:bg-brand-500 active:scale-[0.98] text-white text-sm font-semibold shadow-md shadow-brand-500/25 transition-all select-none"
+            disabled={isProcessing}
+            onClick={handleAccept}
+            className="flex items-center justify-center space-x-2 px-4 py-3 min-h-[48px] rounded-xl bg-brand-600 hover:bg-brand-500 active:scale-[0.98] disabled:opacity-50 text-white text-sm font-semibold shadow-md shadow-brand-500/25 transition-all select-none"
           >
-            <Check className="w-4 h-4" />
-            <span>Accept</span>
+            {isProcessing ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                <Check className="w-4 h-4" />
+                <span>Accept</span>
+              </>
+            )}
           </button>
         </div>
       </div>

@@ -147,6 +147,11 @@ export const api = {
       handleResponse<TransferItem>(r)
     ),
 
+  deleteTransfer: (transferId: string) =>
+    fetch(`${BASE_URL}/api/transfers/${transferId}`, { method: 'DELETE' }).then((r) =>
+      handleResponse<{ status: string; deleted: boolean }>(r)
+    ),
+
   uploadChunk: (
     transferId: string,
     fileId: string,

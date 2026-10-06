@@ -21,6 +21,7 @@ interface DashboardProps {
   onPauseTransfer: (id: string) => void;
   onResumeTransfer: (id: string) => void;
   onCancelTransfer: (id: string) => void;
+  onDeleteTransfer?: (id: string) => void;
   onOpenConnect: () => void;
   onLeaveRoom?: () => void;
   onChatWithDevice?: (device: DeviceInfo) => void;
@@ -36,6 +37,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onPauseTransfer,
   onResumeTransfer,
   onCancelTransfer,
+  onDeleteTransfer,
   onOpenConnect,
   onLeaveRoom,
   onChatWithDevice,
@@ -222,6 +224,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   onPause={onPauseTransfer}
                   onResume={onResumeTransfer}
                   onCancel={onCancelTransfer}
+                  onDelete={onDeleteTransfer}
                 />
               ))}
             </div>

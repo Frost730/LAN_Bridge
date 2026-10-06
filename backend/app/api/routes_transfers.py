@@ -70,6 +70,10 @@ async def accept_transfer(transfer_id: str) -> Dict[str, Any]:
     if not session:
         raise HTTPException(status_code=404, detail="Transfer not found")
 
+    # Idempotent check: if already accepted / transferring, avoid duplicate notification
+    if session.status == TransferState.TRANSFERRING:
+        return session.to_dict()
+
     success = transfer_manager.accept_transfer(transfer_id)
     if not success:
         raise HTTPException(status_code=400, detail="Cannot accept transfer in current state")
@@ -147,6 +151,18 @@ async def cancel_transfer(transfer_id: str) -> Dict[str, Any]:
         "transfer": session.to_dict()
     })
     return session.to_dict()
+
+@router.delete("/{transfer_id}")
+async def delete_transfer(transfer_id: str) -> Dict[str, Any]:
+    deleted = transfer_manager.delete_transfer(transfer_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+
+    await ws_manager.broadcast({
+        "type": "transfer_deleted",
+        "transfer_id": transfer_id
+    })
+    return {"status": "ok", "deleted": True, "transfer_id": transfer_id}
 
 @router.put("/{transfer_id}/files/{file_id}/chunks")
 async def upload_chunk(
