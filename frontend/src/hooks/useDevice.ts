@@ -12,6 +12,15 @@ export function useDevice() {
   const [pendingPairRequest, setPendingPairRequest] = useState<DeviceInfo | null>(null);
   const [pairStatus, setPairStatus] = useState<'idle' | 'pending' | 'approved' | 'rejected'>('idle');
 
+  const [currentRoom, setCurrentRoom] = useState<string | null>(() => {
+    try {
+      const param = new URLSearchParams(window.location.search).get('room');
+      return param ? param.trim() : null;
+    } catch {
+      return null;
+    }
+  });
+
   // Load host device info
   const refreshHostDevice = useCallback(async () => {
     try {
@@ -47,15 +56,41 @@ export function useDevice() {
     }
     // Reconnect ws with updated name
     wsClient.disconnect();
-    wsClient.connect(updated);
+    wsClient.connect(updated, currentRoom);
+  };
+
+  const joinRoom = (roomName: string) => {
+    const trimmed = roomName.trim();
+    if (!trimmed) return;
+    wsClient.joinRoom(trimmed);
+    setCurrentRoom(trimmed);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', trimmed);
+      window.history.replaceState({}, '', url.toString());
+    } catch {}
+  };
+
+  const leaveRoom = () => {
+    wsClient.leaveRoom();
+    setCurrentRoom(null);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('room');
+      window.history.replaceState({}, '', url.toString());
+    } catch {}
   };
 
   useEffect(() => {
+    if (currentRoom) {
+      wsClient.setInitialRoom(currentRoom);
+    }
+
     refreshHostDevice();
     refreshDevices();
 
     // Connect WebSocket
-    wsClient.connect(localDevice);
+    wsClient.connect(localDevice, currentRoom);
 
     const unsubConn = wsClient.on('connection_changed', (data) => {
       setIsConnected(data.connected);
@@ -65,6 +100,22 @@ export function useDevice() {
       if (Array.isArray(data.devices)) {
         setOnlineDevices(data.devices);
       }
+      if (data.room !== undefined) {
+        setCurrentRoom(data.room || null);
+      }
+    });
+
+    const unsubRoom = wsClient.on('room_changed', (data) => {
+      setCurrentRoom(data.room || null);
+      try {
+        const url = new URL(window.location.href);
+        if (data.room) {
+          url.searchParams.set('room', data.room);
+        } else {
+          url.searchParams.delete('room');
+        }
+        window.history.replaceState({}, '', url.toString());
+      } catch {}
     });
 
     const unsubPairReq = wsClient.on('pair_request', (data) => {
@@ -97,6 +148,7 @@ export function useDevice() {
     return () => {
       unsubConn();
       unsubDevices();
+      unsubRoom();
       unsubPairReq();
       unsubPairApproved();
       unsubPairRejected();
@@ -123,6 +175,9 @@ export function useDevice() {
     hostDevice,
     onlineDevices: onlineDevices.filter((d) => d.device_id !== localDevice.device_id),
     isConnected,
+    currentRoom,
+    joinRoom,
+    leaveRoom,
     pendingPairRequest,
     setPendingPairRequest,
     pairStatus,

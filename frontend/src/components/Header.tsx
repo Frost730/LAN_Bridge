@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Wifi, Moon, Sun, Monitor, Smartphone, Tablet, Laptop, Edit2, Check, X, ShieldCheck, Unplug } from 'lucide-react';
+import { Wifi, Moon, Sun, Monitor, Smartphone, Tablet, Laptop, Edit2, Check, X, ShieldCheck, Unplug, Users } from 'lucide-react';
 import { DeviceInfo } from '../types';
 import { Theme } from '../hooks/useTheme';
 
@@ -8,9 +8,11 @@ interface HeaderProps {
   hostDevice: DeviceInfo | null;
   isConnected: boolean;
   theme: Theme;
+  currentRoom?: string | null;
   onThemeChange: (theme: Theme) => void;
   onUpdateName: (name: string) => void;
   onOpenConnect: () => void;
+  onLeaveRoom?: () => void;
   onUnpairSelf?: () => void;
 }
 
@@ -19,9 +21,11 @@ export const Header: React.FC<HeaderProps> = ({
   hostDevice,
   isConnected,
   theme,
+  currentRoom,
   onThemeChange,
   onUpdateName,
   onOpenConnect,
+  onLeaveRoom,
   onUnpairSelf,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
@@ -97,6 +101,23 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Device Identity & Quick Actions */}
         <div className="flex items-center space-x-1.5 sm:space-x-2.5">
+          {/* Active Temporary Room Badge */}
+          {currentRoom && (
+            <div className="flex items-center space-x-1.5 px-2 sm:px-2.5 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-xs font-medium">
+              <Users className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+              <span className="font-mono font-semibold max-w-[65px] sm:max-w-[120px] truncate">{currentRoom}</span>
+              {onLeaveRoom && (
+                <button
+                  onClick={onLeaveRoom}
+                  className="p-0.5 hover:text-rose-500 rounded text-purple-400 dark:text-purple-400"
+                  title="Leave Room"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Current Device Pill */}
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl px-2 sm:px-3 py-1.5 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200">
             <span className="text-brand-500 mr-1 sm:mr-2 shrink-0">{renderDeviceIcon(localDevice.device_type)}</span>

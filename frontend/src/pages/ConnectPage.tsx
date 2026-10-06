@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
-import { QrCode, KeyRound, Copy, Check, RefreshCw, AlertCircle, Shield, Wifi } from 'lucide-react';
+import { QrCode, KeyRound, Copy, Check, RefreshCw, AlertCircle, Shield, Users, Sparkles, LogOut, Link2 } from 'lucide-react';
 import { api } from '../services/api';
 import { DeviceInfo } from '../types';
 
@@ -8,14 +8,33 @@ interface ConnectPageProps {
   localDevice: DeviceInfo;
   hostDevice: DeviceInfo | null;
   onPairedSuccess: () => void;
+  currentRoom?: string | null;
+  onJoinRoom?: (room: string) => void;
+  onLeaveRoom?: () => void;
 }
+
+const generateRandomRoom = () => {
+  const adjectives = ['swift', 'blue', 'cosmic', 'bright', 'amber', 'silent', 'golden', 'hyper'];
+  const nouns = ['falcon', 'river', 'orbit', 'cloud', 'forest', 'beacon', 'harbor', 'shadow'];
+  const num = Math.floor(10 + Math.random() * 90);
+  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const noun = nouns[Math.floor(Math.random() * nouns.length)];
+  return `${adj}-${noun}-${num}`;
+};
 
 export const ConnectPage: React.FC<ConnectPageProps> = ({
   localDevice,
   hostDevice,
   onPairedSuccess,
+  currentRoom,
+  onJoinRoom,
+  onLeaveRoom,
 }) => {
-  const [activeTab, setActiveTab] = useState<'host' | 'join'>('host');
+  const [activeTab, setActiveTab] = useState<'room' | 'host' | 'join'>(() => (currentRoom ? 'room' : 'room'));
+
+  // Temporary Room State
+  const [roomInput, setRoomInput] = useState<string>('');
+  const [copiedRoomLink, setCopiedRoomLink] = useState(false);
 
   // Host QR & Code State
   const [qrUrl, setQrUrl] = useState<string>('');
@@ -100,6 +119,27 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
+  const handleCopyRoomLink = () => {
+    const targetRoom = currentRoom || roomInput.trim();
+    if (!targetRoom) return;
+    const url = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(targetRoom)}`;
+    navigator.clipboard.writeText(url);
+    setCopiedRoomLink(true);
+    setTimeout(() => setCopiedRoomLink(false), 2000);
+  };
+
+  const handleJoinRoom = (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = roomInput.trim();
+    if (!target) return;
+    onJoinRoom?.(target);
+    onPairedSuccess();
+  };
+
+  const handleRandomRoom = () => {
+    setRoomInput(generateRandomRoom());
+  };
+
   // Submit Pairing Code from client
   const handleJoinWithCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,22 +176,34 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in duration-300">
       {/* Tab Switcher */}
-      <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl w-full sm:max-w-sm mx-auto">
+      <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl w-full mx-auto">
+        <button
+          onClick={() => setActiveTab('room')}
+          className={`flex-1 py-2.5 min-h-[44px] text-xs font-semibold rounded-xl flex items-center justify-center space-x-1.5 transition-all select-none ${
+            activeTab === 'room'
+              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          <Users className="w-4 h-4 text-purple-500" />
+          <span>Temporary Room</span>
+        </button>
+
         <button
           onClick={() => setActiveTab('host')}
-          className={`flex-1 py-2.5 min-h-[44px] text-xs font-semibold rounded-xl flex items-center justify-center space-x-2 transition-all select-none ${
+          className={`flex-1 py-2.5 min-h-[44px] text-xs font-semibold rounded-xl flex items-center justify-center space-x-1.5 transition-all select-none ${
             activeTab === 'host'
               ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
           <QrCode className="w-4 h-4" />
-          <span>Connect New Device</span>
+          <span>QR & Code</span>
         </button>
 
         <button
           onClick={() => setActiveTab('join')}
-          className={`flex-1 py-2.5 min-h-[44px] text-xs font-semibold rounded-xl flex items-center justify-center space-x-2 transition-all select-none ${
+          className={`flex-1 py-2.5 min-h-[44px] text-xs font-semibold rounded-xl flex items-center justify-center space-x-1.5 transition-all select-none ${
             activeTab === 'join'
               ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -162,7 +214,128 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
         </button>
       </div>
 
-      {activeTab === 'host' ? (
+      {activeTab === 'room' && (
+        /* Temporary Room Screen */
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm text-center">
+          <div className="w-12 h-12 rounded-2xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 mx-auto flex items-center justify-center mb-3">
+            <Users className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-1">
+            Temporary Share Room
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-6">
+            Share files across <strong className="text-slate-700 dark:text-slate-300">any network</strong> (different Wi-Fi, 5G, or cellular). Only people in the same room can see each other.
+          </p>
+
+          {currentRoom ? (
+            /* Active Room Panel */
+            <div className="space-y-4 max-w-md mx-auto">
+              <div className="p-4 rounded-2xl bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-left">
+                <span className="text-[11px] font-semibold text-purple-700 dark:text-purple-400 uppercase tracking-wider block mb-1">
+                  Active Room
+                </span>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xl sm:text-2xl font-bold text-slate-900 dark:text-white truncate">
+                    {currentRoom}
+                  </span>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" />
+                    Joined
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyRoomLink}
+                  className="flex-1 py-2.5 px-3 min-h-[44px] rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center justify-center space-x-1.5 shadow-sm shadow-purple-500/25 transition-all"
+                >
+                  {copiedRoomLink ? <Check className="w-4 h-4 text-emerald-300" /> : <Link2 className="w-4 h-4" />}
+                  <span>{copiedRoomLink ? 'Invite Link Copied!' : 'Copy Room Invite Link'}</span>
+                </button>
+
+                {onLeaveRoom && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onLeaveRoom();
+                      onPairedSuccess();
+                    }}
+                    className="py-2.5 px-4 min-h-[44px] rounded-xl border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-semibold text-xs flex items-center justify-center space-x-1.5 transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Leave Room</span>
+                  </button>
+                )}
+              </div>
+
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center">
+                Send the link to anyone. When they open it, they'll join this room automatically.
+              </p>
+            </div>
+          ) : (
+            /* Create / Join Room Form */
+            <form onSubmit={handleJoinRoom} className="space-y-4 max-w-md mx-auto">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 text-left">
+                  Room Name
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. team-sync or swift-falcon"
+                    value={roomInput}
+                    onChange={(e) => setRoomInput(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, ''))}
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={handleRandomRoom}
+                    className="px-3 min-h-[44px] rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium flex items-center space-x-1 shrink-0 transition-colors"
+                    title="Generate Random Room Name"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                    <span className="hidden sm:inline">Random</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                <button
+                  type="submit"
+                  disabled={!roomInput.trim()}
+                  className="flex-1 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 active:bg-purple-700 disabled:opacity-50 text-white font-semibold text-sm shadow-md shadow-purple-500/25 transition-all"
+                >
+                  Join / Create Room
+                </button>
+
+                {roomInput.trim() && (
+                  <button
+                    type="button"
+                    onClick={handleCopyRoomLink}
+                    className="py-3 px-4 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold flex items-center justify-center space-x-1 transition-colors"
+                    title="Copy invite link before joining"
+                  >
+                    {copiedRoomLink ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                    <span>{copiedRoomLink ? 'Copied' : 'Copy Link'}</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-left text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
+                <p className="font-semibold text-slate-700 dark:text-slate-300">🔒 How Temporary Rooms work:</p>
+                <p>• Rooms are ephemeral: created instantly in memory and destroyed when everyone leaves.</p>
+                <p>• Devices in the room can discover each other across public networks, mobile data, and Wi-Fi.</p>
+                <p>• Strangers outside the room cannot see your device.</p>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'host' && (
         /* Host Connect Screen (QR + 6-digit Code) */
         <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm text-center">
           <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white mb-1">
@@ -232,7 +405,9 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
             </div>
           </div>
         </div>
-      ) : (
+      )}
+
+      {activeTab === 'join' && (
         /* Join with 6-digit Code Form */
         <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-sm max-w-md mx-auto">
           <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1 text-center">

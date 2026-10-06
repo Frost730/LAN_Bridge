@@ -8,23 +8,39 @@ class WebSocketClient {
   private reconnectTimer: any = null;
   private pingInterval: any = null;
   private deviceInfo: DeviceInfo | null = null;
+  private currentRoom: string | null = null;
   public isConnected: boolean = false;
 
-  public connect(device: DeviceInfo): void {
+  public setInitialRoom(room: string | null): void {
+    this.currentRoom = room ? room.trim() : null;
+  }
+
+  public getRoom(): string | null {
+    return this.currentRoom;
+  }
+
+  public connect(device: DeviceInfo, room?: string | null): void {
     this.deviceInfo = device;
+    if (room !== undefined) {
+      this.currentRoom = room ? room.trim() : null;
+    }
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const query = new URLSearchParams({
+    const queryParams: Record<string, string> = {
       device_id: device.device_id,
       device_name: device.device_name,
       device_type: device.device_type,
       os: device.os,
       browser: device.browser,
-    });
+    };
+    if (this.currentRoom) {
+      queryParams.room = this.currentRoom;
+    }
+    const query = new URLSearchParams(queryParams);
 
     const url = `${protocol}//${host}/ws?${query.toString()}`;
 
@@ -42,6 +58,10 @@ class WebSocketClient {
         try {
           const message = JSON.parse(event.data);
           if (message.type) {
+            if (message.type === 'devices_updated' && message.room !== undefined) {
+              this.currentRoom = message.room || null;
+              this.emit('room_changed', { room: this.currentRoom });
+            }
             this.emit(message.type, message);
           }
         } catch {
@@ -106,6 +126,20 @@ class WebSocketClient {
     if (handlers) {
       handlers.forEach((h) => h(data));
     }
+  }
+
+  public joinRoom(room: string): void {
+    const trimmed = room.trim();
+    if (!trimmed) return;
+    this.currentRoom = trimmed;
+    this.send({ type: 'join_room', room: trimmed });
+    this.emit('room_changed', { room: trimmed });
+  }
+
+  public leaveRoom(): void {
+    this.currentRoom = null;
+    this.send({ type: 'leave_room' });
+    this.emit('room_changed', { room: null });
   }
 
   public send(data: any): boolean {

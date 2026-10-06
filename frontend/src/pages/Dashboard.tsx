@@ -5,12 +5,13 @@ import { TransferCard } from '../components/TransferCard';
 import { EmptyState } from '../components/EmptyState';
 import { FileListModal } from '../components/FileListModal';
 import { DeviceInfo, TransferItem } from '../types';
-import { Users, ArrowLeftRight, QrCode, Sparkles } from 'lucide-react';
+import { Users, ArrowLeftRight, QrCode, Sparkles, Link2, Check, LogOut } from 'lucide-react';
 
 interface DashboardProps {
   localDevice: DeviceInfo;
   onlineDevices: DeviceInfo[];
   transfers: TransferItem[];
+  currentRoom?: string | null;
   onSendFiles: (
     files: Array<{ file: File; relativePath: string }>,
     targetDevice: DeviceInfo,
@@ -21,6 +22,7 @@ interface DashboardProps {
   onResumeTransfer: (id: string) => void;
   onCancelTransfer: (id: string) => void;
   onOpenConnect: () => void;
+  onLeaveRoom?: () => void;
   onNavigateTab: (tab: any) => void;
 }
 
@@ -28,17 +30,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
   localDevice,
   onlineDevices,
   transfers,
+  currentRoom,
   onSendFiles,
   onPauseTransfer,
   onResumeTransfer,
   onCancelTransfer,
   onOpenConnect,
+  onLeaveRoom,
   onNavigateTab,
 }) => {
   const [selectedFiles, setSelectedFiles] = useState<Array<{ file: File; relativePath: string }> | null>(null);
   const [isFolder, setIsFolder] = useState(false);
   const [rootName, setRootName] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [copiedRoomLink, setCopiedRoomLink] = useState(false);
+
+  const handleCopyRoomLink = () => {
+    if (!currentRoom) return;
+    const url = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(currentRoom)}`;
+    navigator.clipboard.writeText(url);
+    setCopiedRoomLink(true);
+    setTimeout(() => setCopiedRoomLink(false), 2000);
+  };
 
   const handleFilesSelected = (
     files: Array<{ file: File; relativePath: string }>,
@@ -73,6 +86,45 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <Dropzone onFilesSelected={handleFilesSelected} />
       </section>
 
+      {/* Active Room Banner */}
+      {currentRoom && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-xs">
+          <div className="flex items-center space-x-2.5 w-full sm:w-auto">
+            <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-purple-900/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+              <Users className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <span>Room: <strong className="font-mono text-purple-600 dark:text-purple-400">{currentRoom}</strong></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Cross-network group sharing active. Devices outside this room cannot see you.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <button
+              onClick={handleCopyRoomLink}
+              className="py-1.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium text-xs flex items-center space-x-1 shadow-sm transition-all"
+            >
+              {copiedRoomLink ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Link2 className="w-3.5 h-3.5" />}
+              <span>{copiedRoomLink ? 'Link Copied!' : 'Copy Invite Link'}</span>
+            </button>
+            {onLeaveRoom && (
+              <button
+                onClick={onLeaveRoom}
+                className="py-1.5 px-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-medium text-xs flex items-center space-x-1 transition-colors"
+                title="Leave room and return to standard local Wi-Fi discovery"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Leave</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Grid: Nearby Devices & Current Transfers */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Nearby Devices */}
@@ -81,7 +133,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="flex items-center space-x-2">
               <Users className="w-5 h-5 text-brand-600 dark:text-brand-400" />
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Nearby Devices ({onlineDevices.length})
+                {currentRoom ? `Room Devices (${onlineDevices.length})` : `Nearby Devices (${onlineDevices.length})`}
               </h2>
             </div>
             <button
@@ -89,17 +141,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
               className="flex items-center space-x-1.5 text-xs font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 hover:underline"
             >
               <QrCode className="w-3.5 h-3.5" />
-              <span>Pair New Device</span>
+              <span>{currentRoom ? 'Room / Pair' : 'Pair New Device'}</span>
             </button>
           </div>
 
           {onlineDevices.length === 0 ? (
             <EmptyState
               icon={Users}
-              title="No devices connected"
-              description="Open LANBridge in a browser on your phone, laptop, or tablet on the same Wi-Fi to start transferring."
-              actionText="Pair Device"
-              onAction={onOpenConnect}
+              title={currentRoom ? 'No one else in this room yet' : 'No devices connected'}
+              description={
+                currentRoom
+                  ? 'Share your room invite link with friends or colleagues so they can join this room from anywhere.'
+                  : 'Open LANBridge in a browser on your phone, laptop, or tablet on the same Wi-Fi to start transferring.'
+              }
+              actionText={currentRoom ? 'Copy Room Link' : 'Pair Device'}
+              onAction={currentRoom ? handleCopyRoomLink : onOpenConnect}
             />
           ) : (
             <div className="space-y-3">

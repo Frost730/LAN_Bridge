@@ -25,6 +25,9 @@ export function App() {
     hostDevice,
     onlineDevices,
     isConnected,
+    currentRoom,
+    joinRoom,
+    leaveRoom,
     pendingPairRequest,
     setPendingPairRequest,
     updateName,
@@ -111,10 +114,12 @@ export function App() {
         localDevice={localDevice}
         hostDevice={hostDevice}
         isConnected={isConnected}
+        currentRoom={currentRoom}
         theme={theme}
         onThemeChange={setTheme}
         onUpdateName={updateName}
         onOpenConnect={() => setIsConnectModalOpen(true)}
+        onLeaveRoom={leaveRoom}
         onUnpairSelf={unpairSelf}
       />
 
@@ -132,11 +137,13 @@ export function App() {
             localDevice={localDevice}
             onlineDevices={onlineDevices}
             transfers={transfers}
+            currentRoom={currentRoom}
             onSendFiles={sendFiles}
             onPauseTransfer={pauseTransfer}
             onResumeTransfer={resumeTransfer}
             onCancelTransfer={cancelTransfer}
             onOpenConnect={() => setIsConnectModalOpen(true)}
+            onLeaveRoom={leaveRoom}
             onNavigateTab={setCurrentTab}
           />
         )}
@@ -192,6 +199,9 @@ export function App() {
             <ConnectPage
               localDevice={localDevice}
               hostDevice={hostDevice}
+              currentRoom={currentRoom}
+              onJoinRoom={joinRoom}
+              onLeaveRoom={leaveRoom}
               onPairedSuccess={() => setIsConnectModalOpen(false)}
             />
           </div>

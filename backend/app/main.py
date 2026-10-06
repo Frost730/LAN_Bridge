@@ -3,6 +3,7 @@ import socket
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -110,7 +111,8 @@ async def websocket_endpoint(
     device_name: str = Query("Unknown Device"),
     device_type: str = Query("desktop"),
     os: str = Query("unknown"),
-    browser: str = Query("unknown")
+    browser: str = Query("unknown"),
+    room: Optional[str] = Query(None)
 ):
     forwarded_for = websocket.headers.get("x-forwarded-for")
     if forwarded_for:
@@ -127,7 +129,8 @@ async def websocket_endpoint(
         device_type=device_type,
         os_name=os,
         browser=browser,
-        ip=client_ip
+        ip=client_ip,
+        initial_room=room
     )
     try:
         while True:
@@ -141,6 +144,20 @@ async def websocket_endpoint(
             try:
                 import json
                 msg = json.loads(data)
+                msg_type = msg.get("type")
+
+                # Handle temporary room commands
+                if msg_type == "join_room":
+                    room_name = msg.get("room")
+                    if room_name:
+                        ws_manager.join_room(device_id, str(room_name).strip())
+                        await ws_manager.broadcast_peer_list()
+                    continue
+                elif msg_type == "leave_room":
+                    ws_manager.leave_room(device_id)
+                    await ws_manager.broadcast_peer_list()
+                    continue
+
                 target_id = msg.get("target_device_id")
                 if target_id:
                     msg["from_device_id"] = device_id

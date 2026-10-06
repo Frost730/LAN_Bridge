@@ -45,10 +45,35 @@ class ConnectionManager:
         self._device_websockets: Dict[str, Set[WebSocket]] = {}
         # Maps device_id to set of explicitly paired remote devices (cross-network pairs)
         self._paired_links: Dict[str, Set[str]] = {}
+        # Temporary named rooms: room_name -> Set[device_id]
+        self._custom_rooms: Dict[str, Set[str]] = {}
+        # Device room mapping: device_id -> room_name
+        self._device_custom_room: Dict[str, str] = {}
         self._host_device_id: Optional[str] = None
 
     def set_host_device_id(self, host_id: str) -> None:
         self._host_device_id = host_id
+
+    def join_room(self, device_id: str, room_name: str) -> None:
+        clean = room_name.strip().lower()
+        if not clean:
+            return
+        self.leave_room(device_id)
+        self._custom_rooms.setdefault(clean, set()).add(device_id)
+        self._device_custom_room[device_id] = clean
+        logger.info(f"Device {device_id} joined temporary room '{clean}'")
+
+    def leave_room(self, device_id: str) -> Optional[str]:
+        room = self._device_custom_room.pop(device_id, None)
+        if room and room in self._custom_rooms:
+            self._custom_rooms[room].discard(device_id)
+            if not self._custom_rooms[room]:
+                self._custom_rooms.pop(room, None)
+            logger.info(f"Device {device_id} left temporary room '{room}'")
+        return room
+
+    def get_device_room(self, device_id: str) -> Optional[str]:
+        return self._device_custom_room.get(device_id)
 
     def pair_devices(self, id_a: str, id_b: str) -> None:
         """Explicitly links two devices across different networks (e.g. via QR or 6-digit code)."""
@@ -58,7 +83,7 @@ class ConnectionManager:
         self._paired_links.setdefault(id_b, set()).add(id_a)
         logger.info(f"Devices explicitly linked across networks: {id_a} <-> {id_b}")
 
-    async def connect(self, websocket: WebSocket, device_id: str, device_name: str, device_type: str, os_name: str, browser: str, ip: str) -> ConnectedPeer:
+    async def connect(self, websocket: WebSocket, device_id: str, device_name: str, device_type: str, os_name: str, browser: str, ip: str, initial_room: Optional[str] = None) -> ConnectedPeer:
         from ..api.routes_device import is_cloud_env
         cloud_active = is_cloud_env()
 
@@ -70,8 +95,10 @@ class ConnectionManager:
             self._device_websockets[device_id] = set()
         self._device_websockets[device_id].add(websocket)
 
-        logger.info(f"Peer connected: {device_name} ({device_id}) [network_room: {peer.network_room}]")
-        # Broadcast presence only to peers on the same network or paired
+        if initial_room:
+            self.join_room(device_id, initial_room)
+
+        logger.info(f"Peer connected: {device_name} ({device_id}) [network_room: {peer.network_room}] [custom_room: {self.get_device_room(device_id)}]")
         await self.broadcast_peer_list()
         return peer
 
@@ -83,32 +110,39 @@ class ConnectionManager:
                 device_sockets.discard(websocket)
                 if not device_sockets:
                     self._device_websockets.pop(peer.device_id, None)
+                    self.leave_room(peer.device_id)
             logger.info(f"Peer disconnected: {peer.device_name} ({peer.device_id})")
             await self.broadcast_peer_list()
 
     def get_online_devices(self, for_device_id: Optional[str] = None, client_ip: Optional[str] = None) -> List[dict]:
         from ..api.routes_device import is_cloud_env
         cloud_active = is_cloud_env()
-        if not cloud_active:
-            unique: Dict[str, dict] = {}
-            for peer in self._connections.values():
-                if for_device_id and peer.device_id == for_device_id:
-                    continue
-                if peer.device_id not in unique:
-                    unique[peer.device_id] = peer.to_dict(is_cloud=False)
-            return list(unique.values())
+        viewer_custom_room = self.get_device_room(for_device_id) if for_device_id else None
 
-        viewer_room = compute_network_room(client_ip or "unknown", is_cloud=True)
+        viewer_net_room = compute_network_room(client_ip or "unknown", is_cloud=True)
         paired_with_viewer = self._paired_links.get(for_device_id, set()) if for_device_id else set()
 
         unique: Dict[str, dict] = {}
         for peer in self._connections.values():
             if for_device_id and peer.device_id == for_device_id:
                 continue
-            # Isolated by public Wi-Fi network OR explicitly paired across networks
-            if (peer.network_room == viewer_room) or (peer.device_id in paired_with_viewer):
+            peer_custom_room = self.get_device_room(peer.device_id)
+
+            # 1. Custom room check
+            if viewer_custom_room:
+                if peer_custom_room == viewer_custom_room:
+                    if peer.device_id not in unique:
+                        unique[peer.device_id] = peer.to_dict(is_cloud=cloud_active)
+                continue
+
+            # Target is in a custom room, but viewer is not -> invisible to outsider
+            if peer_custom_room:
+                continue
+
+            # 2. General network room (same Wi-Fi router) OR explicit pair
+            if not cloud_active or (peer.network_room == viewer_net_room) or (peer.device_id in paired_with_viewer):
                 if peer.device_id not in unique:
-                    unique[peer.device_id] = peer.to_dict(is_cloud=True)
+                    unique[peer.device_id] = peer.to_dict(is_cloud=cloud_active)
         return list(unique.values())
 
     async def broadcast(self, message: dict) -> None:
@@ -128,12 +162,26 @@ class ConnectionManager:
 
         # Send tailored list of visible peers to each connected websocket
         for ws, viewer in list(self._connections.items()):
+            viewer_custom_room = self.get_device_room(viewer.device_id)
             paired_with_viewer = self._paired_links.get(viewer.device_id, set())
             unique_visible: Dict[str, dict] = {}
+
             for peer in self._connections.values():
                 if peer.device_id == viewer.device_id:
                     continue
-                # Same Wi-Fi network OR explicitly paired
+                peer_custom_room = self.get_device_room(peer.device_id)
+
+                # 1. Custom room matching
+                if viewer_custom_room:
+                    if peer_custom_room == viewer_custom_room:
+                        if peer.device_id not in unique_visible:
+                            unique_visible[peer.device_id] = peer.to_dict(is_cloud=cloud_active)
+                    continue
+
+                if peer_custom_room:
+                    continue
+
+                # 2. Same Wi-Fi network OR explicitly paired
                 if not cloud_active or (viewer.network_room == peer.network_room) or (peer.device_id in paired_with_viewer):
                     if peer.device_id not in unique_visible:
                         unique_visible[peer.device_id] = peer.to_dict(is_cloud=cloud_active)
@@ -141,7 +189,8 @@ class ConnectionManager:
             try:
                 await ws.send_text(json.dumps({
                     "type": "devices_updated",
-                    "devices": list(unique_visible.values())
+                    "devices": list(unique_visible.values()),
+                    "room": viewer_custom_room
                 }))
             except Exception:
                 pass
