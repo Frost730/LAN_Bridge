@@ -64,6 +64,7 @@ class TransferSession:
         self.created_at: float = time.time()
         self.completed_at: Optional[float] = None
         self.error_message: Optional[str] = None
+        self.transport: str = "http"
         self.speed_calc = SpeedCalculator()
 
     @property
@@ -96,6 +97,7 @@ class TransferSession:
             "is_folder": self.is_folder,
             "root_name": self.root_name,
             "files": [f.to_dict() for f in self.files.values()],
+            "transport": self.transport,
             "created_at": self.created_at,
             "completed_at": self.completed_at,
             "error_message": self.error_message
@@ -110,6 +112,7 @@ class TransferManager:
         return self._transfers.get(transfer_id)
 
     def get_all_transfers(self) -> List[dict]:
+        self.cleanup_stale_transfers()
         return [t.to_dict() for t in self._transfers.values()]
 
     def create_transfer(
@@ -199,6 +202,42 @@ class TransferManager:
             self.cleanup_temp_files(session)
             return True
         return False
+
+    def cleanup_stale_transfers(self, max_age_seconds: float = 300.0) -> None:
+        """Mark transfers left idle without any progress for > 5 minutes as cancelled"""
+        now = time.time()
+        for t in list(self._transfers.values()):
+            if t.status in (TransferState.TRANSFERRING, TransferState.WAITING_FOR_ACCEPTANCE):
+                # If no progress for 5 minutes since creation, mark cancelled
+                if (now - t.created_at) > max_age_seconds and t.bytes_transferred == 0:
+                    t.status = TransferState.CANCELLED
+                    t.error_message = "Transfer session expired or disconnected"
+
+    async def complete_transfer(self, transfer_id: str, transport: str = "webrtc") -> bool:
+        session = self.get_transfer(transfer_id)
+        if not session:
+            return False
+        session.status = TransferState.COMPLETED
+        session.completed_at = time.time()
+        session.transport = transport
+        for f in session.files.values():
+            f.status = FileTransferState.COMPLETED
+            f.bytes_received = f.size
+        # Record in SQLite history
+        try:
+            filename = session.root_name if session.is_folder else (list(session.files.values())[0].filename if session.files else "file")
+            await db.add_history(
+                transfer_id=session.transfer_id,
+                device_name=session.sender_name,
+                direction="received",
+                filename=filename,
+                size=session.total_size,
+                result="completed"
+            )
+        except Exception as e:
+            logger.warning(f"Could not record transfer to history: {e}")
+        self.cleanup_temp_files(session)
+        return True
 
     async def write_chunk(
         self,

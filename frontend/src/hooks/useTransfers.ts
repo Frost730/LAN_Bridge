@@ -34,7 +34,22 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
   const refreshTransfers = useCallback(async () => {
     try {
       const list = await api.getTransfers(localDeviceId);
-      setTransfers(list);
+      const sanitized = list.map((t) => {
+        // If this device was the sender and transfer is still marked transferring with 0 bytes,
+        // but local files are no longer in RAM (e.g. after a page reload), mark it cancelled.
+        if (
+          t.status === 'transferring' &&
+          t.bytes_transferred === 0 &&
+          t.sender_device_id === localDeviceId &&
+          !activeSendingTransfersRef.current.has(t.transfer_id) &&
+          !localFilesRef.current.has(t.transfer_id)
+        ) {
+          api.cancelTransfer(t.transfer_id).catch(() => {});
+          return { ...t, status: 'cancelled' as const, error_message: 'Session disconnected by page reload' };
+        }
+        return t;
+      });
+      setTransfers(sanitized);
     } catch {
       // Ignore
     }
@@ -93,6 +108,11 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
             return t;
           })
         );
+
+        // Notify backend that WebRTC receiver finished file download
+        api.completeTransfer(transfer_id, 'webrtc').catch((err) => {
+          console.warn('[WebRTC] Error notifying completeTransfer:', err);
+        });
 
         if (onNotificationRef.current) {
           onNotificationRef.current('Transfer Complete ✓ (WebRTC P2P)', `${filename} saved successfully`);
@@ -253,6 +273,11 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
                     : t
                 )
               );
+
+              // Notify backend of sender completion
+              api.completeTransfer(transferId, 'webrtc').catch((err) => {
+                console.warn('[WebRTC] Error notifying completeTransfer from sender:', err);
+              });
             }
             return;
           }
@@ -477,6 +502,14 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
 
     const workerPool = Array.from({ length: CONCURRENCY }, () => worker());
     await Promise.all(workerPool);
+
+    if (!ctrl.cancelled) {
+      try {
+        await api.completeTransfer(transferId, 'http');
+      } catch (e) {
+        console.warn('[HTTP] Error completing transfer on backend:', e);
+      }
+    }
 
     refreshTransfers();
   };

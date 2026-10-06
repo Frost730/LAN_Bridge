@@ -152,6 +152,21 @@ async def cancel_transfer(transfer_id: str) -> Dict[str, Any]:
     })
     return session.to_dict()
 
+@router.post("/{transfer_id}/complete")
+async def complete_transfer(transfer_id: str, transport: str = Query("webrtc")) -> Dict[str, Any]:
+    session = transfer_manager.get_transfer(transfer_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+
+    await transfer_manager.complete_transfer(transfer_id, transport=transport)
+
+    await ws_manager.broadcast({
+        "type": "transfer_completed",
+        "transfer_id": transfer_id,
+        "transfer": session.to_dict()
+    })
+    return session.to_dict()
+
 @router.delete("/{transfer_id}")
 async def delete_transfer(transfer_id: str) -> Dict[str, Any]:
     deleted = transfer_manager.delete_transfer(transfer_id)
@@ -206,6 +221,14 @@ async def upload_chunk(
         "eta_seconds": eta,
         "status": session.status.value if session else "transferring"
     })
+
+    if session and session.status == TransferState.COMPLETED:
+        session.transport = "http"
+        await ws_manager.broadcast({
+            "type": "transfer_completed",
+            "transfer_id": transfer_id,
+            "transfer": session.to_dict()
+        })
 
     return {
         "status": "ok",

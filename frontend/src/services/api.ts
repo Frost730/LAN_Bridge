@@ -147,6 +147,11 @@ export const api = {
       handleResponse<TransferItem>(r)
     ),
 
+  completeTransfer: (transferId: string, transport = 'webrtc') =>
+    fetch(`${BASE_URL}/api/transfers/${transferId}/complete?transport=${transport}`, {
+      method: 'POST',
+    }).then((r) => handleResponse<TransferItem>(r)),
+
   deleteTransfer: (transferId: string) =>
     fetch(`${BASE_URL}/api/transfers/${transferId}`, { method: 'DELETE' }).then((r) =>
       handleResponse<{ status: string; deleted: boolean }>(r)

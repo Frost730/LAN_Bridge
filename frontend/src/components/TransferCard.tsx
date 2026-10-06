@@ -133,7 +133,7 @@ export const TransferCard: React.FC<TransferCardProps> = ({
             </a>
           )}
 
-          {onDelete && (isCompleted || isFailed || !isTransferring) && (
+          {onDelete && (
             <button
               onClick={() => onDelete(transfer.transfer_id)}
               className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
