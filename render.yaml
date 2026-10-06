@@ -7,5 +7,7 @@ services:
     dockerfilePath: ./Dockerfile
     autoDeploy: true
     envVars:
+      - key: PORT
+        value: "8000"
       - key: PYTHONUNBUFFERED
         value: "1"
