@@ -18,7 +18,7 @@ class Settings:
     APP_NAME: str = "LANBridge"
     VERSION: str = "1.0.0"
     HOST: str = os.getenv("LANBRIDGE_HOST", "0.0.0.0")
-    PORT: int = int(os.getenv("LANBRIDGE_PORT", "8000"))
+    PORT: int = int(os.getenv("PORT") or os.getenv("LANBRIDGE_PORT", "8000"))
 
     # Storage paths
     DATA_DIR: Path = APP_DIR / "data"

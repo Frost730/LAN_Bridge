@@ -31,8 +31,9 @@ def main():
     host = settings.HOST
     port = settings.PORT
 
-    # Automatically open default browser on desktop launch
-    if "--no-browser" not in sys.argv:
+    # Automatically open default browser on desktop launch (skip in headless/cloud)
+    is_cloud = bool(os.getenv("PORT") or os.getenv("RENDER") or os.getenv("CONTAINER"))
+    if "--no-browser" not in sys.argv and not is_cloud:
         threading.Thread(target=open_browser, args=(port,), daemon=True).start()
 
     uvicorn.run(
