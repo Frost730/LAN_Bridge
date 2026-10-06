@@ -196,7 +196,7 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelected, disabled = 
 
       <div className="mt-4 flex items-center text-[11px] sm:text-xs text-slate-400 dark:text-slate-500 px-2">
         <Sparkles className="w-3.5 h-3.5 mr-1 text-brand-500 shrink-0" />
-        <span>Direct Wi-Fi / LAN streaming with SHA-256 integrity</span>
+        <span>Direct peer-to-peer streaming with SHA-256 integrity</span>
       </div>
     </div>
   );

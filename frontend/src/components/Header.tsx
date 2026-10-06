@@ -47,6 +47,15 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
+  const isCloud = (() => {
+    if (typeof window === 'undefined') return false;
+    const h = window.location.hostname;
+    if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0') return false;
+    if (h.startsWith('192.168.') || h.startsWith('10.') || h.endsWith('.local')) return false;
+    if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(h)) return false;
+    return true;
+  })() || Boolean(hostDevice?.is_cloud);
+
   return (
     <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -61,15 +70,27 @@ export const Header: React.FC<HeaderProps> = ({
                 LANBridge
               </span>
               <span
-                className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60"
-                title={isConnected ? 'Connected to local network' : 'Connecting to local network'}
+                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium border ${
+                  isCloud
+                    ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-400 border-sky-200 dark:border-sky-800/60'
+                    : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60'
+                }`}
+                title={isConnected ? (isCloud ? 'Connected to Cloud Relay' : 'Connected to local network') : 'Connecting...'}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'} mr-1 sm:mr-1.5`} />
-                <span className="hidden xs:inline sm:inline">{isConnected ? 'LAN' : 'Offline'}</span>
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    isConnected ? (isCloud ? 'bg-sky-500 animate-pulse' : 'bg-emerald-500 animate-pulse') : 'bg-rose-500'
+                  } mr-1 sm:mr-1.5`}
+                />
+                <span className="hidden xs:inline sm:inline">
+                  {isConnected ? (isCloud ? 'Cloud' : 'LAN') : 'Offline'}
+                </span>
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden md:block">
-              Direct local network file transfer • No cloud
+              {isCloud
+                ? 'Encrypted peer-to-peer file transfer'
+                : 'Direct local network file transfer • 100% offline'}
             </p>
           </div>
         </div>
