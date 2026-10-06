@@ -11,7 +11,7 @@ interface HeaderProps {
   currentRoom?: string | null;
   onThemeChange: (theme: Theme) => void;
   onUpdateName: (name: string) => void;
-  onOpenConnect: () => void;
+  onOpenConnect: (tab?: 'room' | 'host' | 'join') => void;
   onLeaveRoom?: () => void;
   onUnpairSelf?: () => void;
 }
@@ -157,7 +157,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Connect / QR Button */}
           <button
-            onClick={onOpenConnect}
+            onClick={() => onOpenConnect('host')}
             className="flex items-center justify-center space-x-1 text-xs font-semibold p-2 sm:px-3 sm:py-1.5 rounded-xl bg-brand-50 hover:bg-brand-100 dark:bg-brand-950/60 dark:hover:bg-brand-900/60 text-brand-600 dark:text-brand-400 border border-brand-200 dark:border-brand-800 transition-colors"
             title="Pair New Device"
           >

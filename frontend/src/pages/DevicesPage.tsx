@@ -10,7 +10,7 @@ interface DevicesPageProps {
   onlineDevices: DeviceInfo[];
   onSendToDevice: (device: DeviceInfo) => void;
   onChatWithDevice?: (device: DeviceInfo) => void;
-  onOpenConnect: () => void;
+  onOpenConnect: (tab?: 'room' | 'host' | 'join') => void;
 }
 
 export const DevicesPage: React.FC<DevicesPageProps> = ({
@@ -71,7 +71,7 @@ export const DevicesPage: React.FC<DevicesPageProps> = ({
         </div>
 
         <button
-          onClick={onOpenConnect}
+          onClick={() => onOpenConnect('host')}
           className="flex items-center justify-center space-x-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-brand-600 hover:bg-brand-500 active:scale-[0.98] text-white font-semibold text-xs shadow-md shadow-brand-500/20 transition-all select-none"
         >
           <Plus className="w-4 h-4" />

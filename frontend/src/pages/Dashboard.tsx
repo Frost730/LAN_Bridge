@@ -22,7 +22,7 @@ interface DashboardProps {
   onResumeTransfer: (id: string) => void;
   onCancelTransfer: (id: string) => void;
   onDeleteTransfer?: (id: string) => void;
-  onOpenConnect: () => void;
+  onOpenConnect: (tab?: 'room' | 'host' | 'join') => void;
   onLeaveRoom?: () => void;
   onChatWithDevice?: (device: DeviceInfo) => void;
   onNavigateTab: (tab: any) => void;
@@ -141,7 +141,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </h2>
             </div>
             <button
-              onClick={onOpenConnect}
+              onClick={() => onOpenConnect(currentRoom ? 'room' : 'host')}
               className="flex items-center space-x-1.5 text-xs font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 hover:underline"
             >
               <QrCode className="w-3.5 h-3.5" />
@@ -159,7 +159,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   : 'Open LANBridge in a browser on your phone, laptop, or tablet on the same Wi-Fi to start transferring.'
               }
               actionText={currentRoom ? 'Copy Room Link' : 'Pair Device'}
-              onAction={currentRoom ? handleCopyRoomLink : onOpenConnect}
+              onAction={currentRoom ? handleCopyRoomLink : () => onOpenConnect('host')}
             />
           ) : (
             <div className="space-y-3">

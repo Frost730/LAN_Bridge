@@ -57,6 +57,12 @@ export function App() {
 
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  const [connectModalTab, setConnectModalTab] = useState<'room' | 'host' | 'join'>('host');
+
+  const handleOpenConnect = (tab: 'room' | 'host' | 'join' = 'host') => {
+    setConnectModalTab(tab);
+    setIsConnectModalOpen(true);
+  };
 
   const isChatActive = currentTab === 'chat';
   const {
@@ -147,7 +153,7 @@ export function App() {
         theme={theme}
         onThemeChange={setTheme}
         onUpdateName={updateName}
-        onOpenConnect={() => setIsConnectModalOpen(true)}
+        onOpenConnect={handleOpenConnect}
         onLeaveRoom={leaveRoom}
         onUnpairSelf={unpairSelf}
       />
@@ -173,7 +179,7 @@ export function App() {
             onResumeTransfer={resumeTransfer}
             onCancelTransfer={cancelTransfer}
             onDeleteTransfer={deleteTransfer}
-            onOpenConnect={() => setIsConnectModalOpen(true)}
+            onOpenConnect={handleOpenConnect}
             onLeaveRoom={leaveRoom}
             onChatWithDevice={handleChatWithDevice}
             onNavigateTab={handleTabChange}
@@ -188,7 +194,7 @@ export function App() {
               handleTabChange('dashboard');
             }}
             onChatWithDevice={handleChatWithDevice}
-            onOpenConnect={() => setIsConnectModalOpen(true)}
+            onOpenConnect={handleOpenConnect}
           />
         )}
 
@@ -247,6 +253,7 @@ export function App() {
               localDevice={localDevice}
               hostDevice={hostDevice}
               currentRoom={currentRoom}
+              initialTab={connectModalTab}
               onJoinRoom={joinRoom}
               onLeaveRoom={leaveRoom}
               onPairedSuccess={() => setIsConnectModalOpen(false)}

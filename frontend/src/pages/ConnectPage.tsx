@@ -11,6 +11,7 @@ interface ConnectPageProps {
   currentRoom?: string | null;
   onJoinRoom?: (room: string) => void;
   onLeaveRoom?: () => void;
+  initialTab?: 'room' | 'host' | 'join';
 }
 
 const generateRandomRoom = () => {
@@ -29,8 +30,18 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
   currentRoom,
   onJoinRoom,
   onLeaveRoom,
+  initialTab,
 }) => {
-  const [activeTab, setActiveTab] = useState<'room' | 'host' | 'join'>(() => (currentRoom ? 'room' : 'room'));
+  const [activeTab, setActiveTab] = useState<'room' | 'host' | 'join'>(
+    () => initialTab || (currentRoom ? 'room' : 'host')
+  );
+
+  // Sync tab if initialTab prop changes
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Temporary Room State
   const [roomInput, setRoomInput] = useState<string>('');
@@ -38,11 +49,13 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
 
   // Host QR & Code State
   const [qrUrl, setQrUrl] = useState<string>('');
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [pairingCode, setPairingCode] = useState<string>('');
   const [expiresIn, setExpiresIn] = useState<number>(300);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [qrError, setQrError] = useState<string | null>(null);
 
   // Client Join Code State
   const [enteredCode, setEnteredCode] = useState<string>('');
@@ -50,34 +63,34 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
   const [joinError, setJoinError] = useState<string | null>(null);
   const [isSubmittingCode, setIsSubmittingCode] = useState(false);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
   // Load Host Pairing Info
   const loadHostPairingInfo = async () => {
     setIsLoading(true);
+    setQrError(null);
     try {
       const [tokenRes, codeRes] = await Promise.all([
         api.getPairingToken(localDevice.device_id),
         api.getPairingCode(localDevice.device_id),
       ]);
 
-      setQrUrl(tokenRes.connect_url);
+      const connectUrl = tokenRes.connect_url;
+      setQrUrl(connectUrl);
       setPairingCode(codeRes.formatted);
       setExpiresIn(codeRes.expires_in_seconds);
 
-      // Render QR code to canvas
-      if (canvasRef.current) {
-        await QRCode.toCanvas(canvasRef.current, tokenRes.connect_url, {
-          width: 220,
-          margin: 1.5,
-          color: {
-            dark: '#0f172a',
-            light: '#ffffff',
-          },
-        });
-      }
-    } catch (e) {
+      // Render QR code to Data URL (works without requiring DOM canvas mounting)
+      const dataUrl = await QRCode.toDataURL(connectUrl, {
+        width: 256,
+        margin: 1.5,
+        color: {
+          dark: '#0f172a',
+          light: '#ffffff',
+        },
+      });
+      setQrDataUrl(dataUrl);
+    } catch (e: any) {
       console.error('Failed to load pairing info:', e);
+      setQrError('Failed to generate pairing QR code');
     } finally {
       setIsLoading(false);
     }
@@ -86,6 +99,13 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
   useEffect(() => {
     loadHostPairingInfo();
   }, []);
+
+  // When switching to host tab, ensure QR code is generated
+  useEffect(() => {
+    if (activeTab === 'host' && !qrDataUrl && !isLoading) {
+      loadHostPairingInfo();
+    }
+  }, [activeTab]);
 
   // Expiration Countdown
   useEffect(() => {
@@ -345,10 +365,33 @@ export const ConnectPage: React.FC<ConnectPageProps> = ({
             Scan the QR code with your phone camera, or open the network address on any device connected to the same Wi-Fi.
           </p>
 
-          {/* QR Code Canvas */}
+          {/* QR Code */}
           <div className="flex flex-col items-center justify-center my-4 sm:my-6">
-            <div className="p-3 bg-white rounded-2xl shadow-md border border-slate-200 dark:border-slate-700 inline-block max-w-[240px]">
-              <canvas ref={canvasRef} className="rounded-xl w-full h-auto" />
+            <div className="p-3 bg-white rounded-2xl shadow-md border border-slate-200 dark:border-slate-700 flex items-center justify-center min-w-[220px] min-h-[220px] sm:min-w-[240px] sm:min-h-[240px]">
+              {isLoading && !qrDataUrl ? (
+                <div className="w-[200px] h-[200px] flex flex-col items-center justify-center text-slate-400">
+                  <RefreshCw className="w-8 h-8 animate-spin text-brand-500 mb-2" />
+                  <span className="text-xs font-medium text-slate-500">Generating QR Code...</span>
+                </div>
+              ) : qrError ? (
+                <div className="w-[200px] h-[200px] flex flex-col items-center justify-center text-rose-500 p-2 text-center">
+                  <AlertCircle className="w-8 h-8 mb-2" />
+                  <span className="text-xs font-medium">{qrError}</span>
+                  <button
+                    type="button"
+                    onClick={loadHostPairingInfo}
+                    className="mt-3 px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <img
+                  src={qrDataUrl}
+                  alt="Scan QR code to pair device"
+                  className="rounded-xl w-[200px] h-[200px] sm:w-[220px] sm:h-[220px] object-contain block select-none"
+                />
+              )}
             </div>
             <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 flex items-center">
               <Shield className="w-3.5 h-3.5 mr-1 text-emerald-500 shrink-0" />
