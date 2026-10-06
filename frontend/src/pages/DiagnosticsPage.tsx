@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Gauge, Server, HardDrive, Wifi, Network, Play, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Activity, Gauge, Server, HardDrive, Wifi, Network, Play, CheckCircle2, AlertCircle, ShieldCheck } from 'lucide-react';
 import { DiagnosticsData } from '../types';
 import { api } from '../services/api';
 import { formatBytes } from '../utils/formatters';
@@ -160,15 +160,37 @@ export const DiagnosticsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Network Interfaces & System Stats */}
-      {diagnostics && (
+      {/* Cloud Mode: Environment & Topology Details Protected */}
+      {isCloud && (
+        <div className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-md rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center shrink-0">
+              <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <h4 className="font-bold text-sm text-slate-900 dark:text-white">
+                Environment Details Protected
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Internal cloud gateway and host infrastructure details are hidden to protect server privacy.
+              </p>
+            </div>
+          </div>
+          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 shrink-0">
+            End-to-End P2P Active
+          </span>
+        </div>
+      )}
+
+      {/* Local Network Interfaces & System Stats (Local Desktop Mode Only) */}
+      {!isCloud && diagnostics && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Detected Interfaces / Cloud Gateway */}
+          {/* Detected Interfaces */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             <div className="flex items-center space-x-2">
               <Network className="w-5 h-5 text-brand-600 dark:text-brand-400" />
               <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                {isCloud ? 'Cloud Gateway Endpoint' : 'Detected Network Interfaces'}
+                Detected Network Interfaces
               </h3>
             </div>
             <div className="space-y-2">
@@ -198,35 +220,33 @@ export const DiagnosticsPage: React.FC = () => {
             <div className="flex items-center space-x-2">
               <Server className="w-5 h-5 text-brand-600 dark:text-brand-400" />
               <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                {isCloud ? 'Service Environment' : 'Host Server Environment'}
+                Host Server Environment
               </h3>
             </div>
 
             <div className="space-y-2.5 text-xs">
               <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">Platform</span>
+                <span className="text-slate-500">Operating System</span>
                 <span className="font-medium text-slate-800 dark:text-slate-200">{diagnostics.os_name}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">Runtime</span>
+                <span className="text-slate-500">Python Runtime</span>
                 <span className="font-medium text-slate-800 dark:text-slate-200">{diagnostics.python_version}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">{isCloud ? 'Service Port' : 'Bound Port'}</span>
+                <span className="text-slate-500">Bound Port</span>
                 <span className="font-medium font-mono text-slate-800 dark:text-slate-200">{diagnostics.server_port}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">{isCloud ? 'Storage Policy' : 'Available Storage'}</span>
+                <span className="text-slate-500">Available Storage</span>
                 <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                  {isCloud
-                    ? 'Direct P2P (Zero Cloud Retention)'
-                    : `${formatBytes(diagnostics.storage_free_bytes)} free of ${formatBytes(diagnostics.storage_total_bytes)}`}
+                  {formatBytes(diagnostics.storage_free_bytes)} free of {formatBytes(diagnostics.storage_total_bytes)}
                 </span>
               </div>
               <div className="flex justify-between py-1.5">
                 <span className="text-slate-500">Transport Security</span>
                 <span className="font-medium text-slate-700 dark:text-slate-300">
-                  {diagnostics.is_https ? 'HTTPS / TLS (WSS Encrypted)' : 'Local Network — HTTP'}
+                  {diagnostics.is_https ? 'HTTPS / TLS' : 'Local Network — HTTP'}
                 </span>
               </div>
             </div>
