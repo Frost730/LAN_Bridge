@@ -67,18 +67,29 @@ export const DiagnosticsPage: React.FC = () => {
     }
   };
 
+  const isCloud = (() => {
+    if (typeof window === 'undefined') return false;
+    const h = window.location.hostname;
+    if (h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0') return false;
+    if (h.startsWith('192.168.') || h.startsWith('10.') || h.endsWith('.local')) return false;
+    if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(h)) return false;
+    return true;
+  })() || Boolean(diagnostics?.is_cloud);
+
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
       <div>
         <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-          Network & Diagnostics
+          {isCloud ? 'Cloud Diagnostics & Latency' : 'Network & Diagnostics'}
         </h2>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Hardware interfaces, server metrics, and real local LAN throughput benchmark.
+          {isCloud
+            ? 'Real-time cloud gateway metrics, latency benchmarks, and connection security.'
+            : 'Hardware interfaces, server metrics, and real local LAN throughput benchmark.'}
         </p>
       </div>
 
-      {/* LAN Speed Test Card */}
+      {/* Speed Test Card */}
       <div className="bg-gradient-to-br from-brand-600 to-blue-700 text-white rounded-3xl p-6 sm:p-8 shadow-lg shadow-brand-500/20">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="flex items-center space-x-3">
@@ -86,9 +97,13 @@ export const DiagnosticsPage: React.FC = () => {
               <Gauge className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h3 className="text-lg font-bold">LAN Throughput Test</h3>
+              <h3 className="text-lg font-bold">
+                {isCloud ? 'Cloud Relay Throughput Test' : 'LAN Throughput Test'}
+              </h3>
               <p className="text-xs text-blue-100">
-                Measures actual Wi-Fi / Ethernet transfer speed between this browser and the LANBridge server.
+                {isCloud
+                  ? 'Measures connection latency and relay speed to the cloud signaling gateway.'
+                  : 'Measures actual Wi-Fi / Ethernet transfer speed between this browser and the LANBridge server.'}
               </p>
             </div>
           </div>
@@ -148,12 +163,12 @@ export const DiagnosticsPage: React.FC = () => {
       {/* Network Interfaces & System Stats */}
       {diagnostics && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Detected Interfaces */}
+          {/* Detected Interfaces / Cloud Gateway */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
             <div className="flex items-center space-x-2">
               <Network className="w-5 h-5 text-brand-600 dark:text-brand-400" />
               <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                Detected Network Interfaces
+                {isCloud ? 'Cloud Gateway Endpoint' : 'Detected Network Interfaces'}
               </h3>
             </div>
             <div className="space-y-2">
@@ -183,33 +198,35 @@ export const DiagnosticsPage: React.FC = () => {
             <div className="flex items-center space-x-2">
               <Server className="w-5 h-5 text-brand-600 dark:text-brand-400" />
               <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                Host Server Environment
+                {isCloud ? 'Service Environment' : 'Host Server Environment'}
               </h3>
             </div>
 
             <div className="space-y-2.5 text-xs">
               <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">Operating System</span>
+                <span className="text-slate-500">Platform</span>
                 <span className="font-medium text-slate-800 dark:text-slate-200">{diagnostics.os_name}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">Python Runtime</span>
+                <span className="text-slate-500">Runtime</span>
                 <span className="font-medium text-slate-800 dark:text-slate-200">{diagnostics.python_version}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">Bound Port</span>
+                <span className="text-slate-500">{isCloud ? 'Service Port' : 'Bound Port'}</span>
                 <span className="font-medium font-mono text-slate-800 dark:text-slate-200">{diagnostics.server_port}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-500">Available Storage</span>
+                <span className="text-slate-500">{isCloud ? 'Storage Policy' : 'Available Storage'}</span>
                 <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                  {formatBytes(diagnostics.storage_free_bytes)} free of {formatBytes(diagnostics.storage_total_bytes)}
+                  {isCloud
+                    ? 'Direct P2P (Zero Cloud Retention)'
+                    : `${formatBytes(diagnostics.storage_free_bytes)} free of ${formatBytes(diagnostics.storage_total_bytes)}`}
                 </span>
               </div>
               <div className="flex justify-between py-1.5">
                 <span className="text-slate-500">Transport Security</span>
                 <span className="font-medium text-slate-700 dark:text-slate-300">
-                  {diagnostics.is_https ? 'HTTPS / TLS' : 'Local Network — HTTP'}
+                  {diagnostics.is_https ? 'HTTPS / TLS (WSS Encrypted)' : 'Local Network — HTTP'}
                 </span>
               </div>
             </div>

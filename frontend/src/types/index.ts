@@ -110,4 +110,5 @@ export interface DiagnosticsData {
   storage_total_bytes: number;
   storage_free_bytes: number;
   is_https: boolean;
+  is_cloud?: boolean;
 }
