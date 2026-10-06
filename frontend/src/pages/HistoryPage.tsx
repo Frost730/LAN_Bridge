@@ -1,17 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, ArrowUpRight, ArrowDownLeft, Trash2, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
-import { HistoryItem } from '../types';
+import { HistoryItem, DeviceInfo } from '../types';
 import { EmptyState } from '../components/EmptyState';
 import { api } from '../services/api';
 import { formatBytes, formatTimestamp } from '../utils/formatters';
 
-export const HistoryPage: React.FC = () => {
+interface HistoryPageProps {
+  localDevice?: DeviceInfo;
+}
+
+export const HistoryPage: React.FC<HistoryPageProps> = ({ localDevice }) => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadHistory = async () => {
     try {
-      const items = await api.getHistory();
+      const items = await api.getHistory(localDevice?.device_id);
       setHistory(items);
     } catch {
       // Ignore

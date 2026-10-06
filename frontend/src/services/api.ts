@@ -104,8 +104,10 @@ export const api = {
       body: JSON.stringify(payload),
     }).then((r) => handleResponse<TransferItem>(r)),
 
-  getTransfers: () =>
-    fetch(`${BASE_URL}/api/transfers`).then((r) => handleResponse<TransferItem[]>(r)),
+  getTransfers: (deviceId?: string) =>
+    fetch(`${BASE_URL}/api/transfers${deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : ''}`).then((r) =>
+      handleResponse<TransferItem[]>(r)
+    ),
 
   getTransfer: (transferId: string) =>
     fetch(`${BASE_URL}/api/transfers/${transferId}`).then((r) => handleResponse<TransferItem>(r)),
@@ -160,8 +162,10 @@ export const api = {
     ),
 
   // History
-  getHistory: () =>
-    fetch(`${BASE_URL}/api/history`).then((r) => handleResponse<HistoryItem[]>(r)),
+  getHistory: (deviceId?: string) =>
+    fetch(`${BASE_URL}/api/history${deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : ''}`).then((r) =>
+      handleResponse<HistoryItem[]>(r)
+    ),
 
   clearHistory: () =>
     fetch(`${BASE_URL}/api/history`, { method: 'DELETE' }).then((r) =>

@@ -162,7 +162,7 @@ export function App() {
           />
         )}
 
-        {currentTab === 'history' && <HistoryPage />}
+        {currentTab === 'history' && <HistoryPage localDevice={localDevice} />}
 
         {currentTab === 'diagnostics' && <DiagnosticsPage />}
 

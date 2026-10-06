@@ -30,10 +30,16 @@ async def get_or_create_pairing_code() -> Dict[str, Any]:
 
 @router.post("/token")
 async def generate_qr_pairing_token(request: Request) -> Dict[str, Any]:
+    from .routes_device import is_cloud_env
     token = token_manager.generate_pairing_token()
-    primary_ip = get_primary_lan_ip()
-    port = settings.PORT
-    url = f"http://{primary_ip}:{port}/?pair={token}"
+    if is_cloud_env():
+        proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        host = request.headers.get("x-forwarded-host", request.url.netloc)
+        url = f"{proto}://{host}/?pair={token}"
+    else:
+        primary_ip = get_primary_lan_ip()
+        port = settings.PORT
+        url = f"http://{primary_ip}:{port}/?pair={token}"
     return {
         "token": token,
         "connect_url": url,

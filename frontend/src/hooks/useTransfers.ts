@@ -30,12 +30,12 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
   // Load existing transfers
   const refreshTransfers = useCallback(async () => {
     try {
-      const list = await api.getTransfers();
+      const list = await api.getTransfers(localDeviceId);
       setTransfers(list);
     } catch {
       // Ignore
     }
-  }, []);
+  }, [localDeviceId]);
 
   useEffect(() => {
     // Setup WebRTC receiver callbacks

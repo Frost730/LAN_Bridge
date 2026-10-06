@@ -61,17 +61,36 @@ async def lifespan(app: FastAPI):
     mdns_manager.stop()
     logger.info("LANBridge backend stopped cleanly")
 
+from .api.routes_device import is_cloud_env
+
+cloud_deployment = is_cloud_env()
+
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.VERSION,
+    docs_url=None if cloud_deployment else "/docs",
+    redoc_url=None if cloud_deployment else "/redoc",
+    openapi_url=None if cloud_deployment else "/openapi.json",
     lifespan=lifespan
 )
 
-# CORS configuration for LAN devices
+# Security Headers & Hardening Middleware
+@app.middleware("http")
+async def apply_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(self), microphone=(), geolocation=(), payment=()"
+    if cloud_deployment or request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -179,6 +179,18 @@ class Database:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
 
+    async def get_history_for_device(self, device_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        async with self.get_connection() as db:
+            async with db.execute("""
+                SELECT h.id, h.transfer_id, h.device_name, h.direction, h.filename, h.size, h.timestamp, h.result
+                FROM history h
+                LEFT JOIN transfers t ON h.transfer_id = t.id
+                WHERE t.sender_device_id = ? OR t.receiver_device_id = ?
+                ORDER BY h.timestamp DESC LIMIT ?
+            """, (device_id, device_id, limit)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
     async def clear_history(self) -> None:
         async with self.get_connection() as db:
             await db.execute("DELETE FROM history")

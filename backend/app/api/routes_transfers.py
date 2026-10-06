@@ -44,9 +44,18 @@ async def create_transfer(payload: TransferCreatePayload) -> Dict[str, Any]:
 
     return session.to_dict()
 
+from .routes_device import is_cloud_env
+
 @router.get("")
-async def list_transfers() -> List[Dict[str, Any]]:
-    return transfer_manager.get_all_transfers()
+async def list_transfers(device_id: Optional[str] = Query(None)) -> List[Dict[str, Any]]:
+    transfers = transfer_manager.get_all_transfers()
+    if is_cloud_env():
+        if not device_id:
+            return []
+        return [t for t in transfers if t.get("sender_device_id") == device_id or t.get("receiver_device_id") == device_id]
+    if device_id:
+        return [t for t in transfers if t.get("sender_device_id") == device_id or t.get("receiver_device_id") == device_id]
+    return transfers
 
 @router.get("/{transfer_id}")
 async def get_transfer(transfer_id: str) -> Dict[str, Any]:

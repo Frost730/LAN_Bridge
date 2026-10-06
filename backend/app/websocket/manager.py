@@ -16,14 +16,14 @@ class ConnectedPeer:
         self.ip = ip
         self.websocket = websocket
 
-    def to_dict(self) -> dict:
+    def to_dict(self, is_cloud: bool = False) -> dict:
         return {
             "device_id": self.device_id,
             "device_name": self.device_name,
             "device_type": self.device_type,
             "os": self.os,
             "browser": self.browser,
-            "ip_address": self.ip,
+            "ip_address": "Protected" if is_cloud else self.ip,
             "online": True
         }
 
@@ -64,10 +64,12 @@ class ConnectionManager:
             await self.broadcast_peer_list()
 
     def get_online_devices(self) -> List[dict]:
+        from ..api.routes_device import is_cloud_env
+        cloud_active = is_cloud_env()
         unique: Dict[str, dict] = {}
         for peer in self._connections.values():
             if peer.device_id not in unique:
-                unique[peer.device_id] = peer.to_dict()
+                unique[peer.device_id] = peer.to_dict(is_cloud=cloud_active)
         return list(unique.values())
 
     async def broadcast(self, message: dict) -> None:
