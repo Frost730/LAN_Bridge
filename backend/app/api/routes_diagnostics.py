@@ -15,6 +15,8 @@ from ..discovery.mdns import mdns_manager
 
 from .routes_device import is_cloud_env
 
+router = APIRouter(prefix="/api/diagnostics", tags=["diagnostics"])
+
 @router.get("")
 async def get_diagnostics(request: Request) -> Dict[str, Any]:
     cloud_active = is_cloud_env()
