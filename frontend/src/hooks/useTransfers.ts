@@ -83,6 +83,24 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
         );
       },
       (transfer_id, file_id, filename, relative_path, blob, sha256_verified) => {
+        // Prevent downloading corrupted or empty blobs
+        if (blob.size === 0) {
+          console.warn(`[WebRTC] Received 0-byte blob for ${filename}`);
+          setTransfers((prev) =>
+            prev.map((t) =>
+              t.transfer_id === transfer_id
+                ? {
+                    ...t,
+                    status: 'failed',
+                    error_message: 'Received empty file',
+                    transport: 'webrtc',
+                  }
+                : t
+            )
+          );
+          return;
+        }
+
         // Trigger browser save / download
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
