@@ -435,6 +435,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     const engineConfig = getTransferConfig();
     const CHUNK_SIZE = engineConfig.chunkSize;
     const CONCURRENCY = Math.max(1, Math.min(files.length, engineConfig.concurrentTransfers));
+    let hasUploadErrors = false;
 
     // Upload single file sequentially in chunks
     const uploadSingleFile = async (item: { fileObj: File; fileId: string; relativePath: string }) => {
@@ -475,17 +476,57 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
         const end = Math.min(totalSize, offset + CHUNK_SIZE);
         const chunkBlob = file.slice(offset, end);
 
-        try {
-          await api.uploadChunk(transferId, item.fileId, chunkIdx, offset, chunkBlob);
-        } catch (err: any) {
-          console.error(`Error uploading chunk ${chunkIdx} of ${file.name}:`, err);
+        let chunkSuccess = false;
+        let lastErrMsg = '';
+
+        for (let attempt = 1; attempt <= 3; attempt++) {
           if (ctrl.cancelled) break;
-          const msg = String(err?.message || '');
-          if (msg.includes('cancelled') || msg.includes('not found') || msg.includes('400')) {
-            ctrl.cancelled = true;
+          try {
+            await api.uploadChunk(transferId, item.fileId, chunkIdx, offset, chunkBlob);
+            chunkSuccess = true;
             break;
+          } catch (err: any) {
+            lastErrMsg = String(err?.message || '');
+            console.warn(`Chunk ${chunkIdx} upload failed (attempt ${attempt}/3):`, lastErrMsg);
+            if (ctrl.cancelled) break;
+            if (
+              lastErrMsg.includes('507') ||
+              lastErrMsg.includes('storage full') ||
+              lastErrMsg.includes('disk full') ||
+              lastErrMsg.includes('No space')
+            ) {
+              ctrl.cancelled = true;
+              break;
+            }
+            if (attempt < 3) {
+              await new Promise((r) => setTimeout(r, 1000 * attempt));
+            }
           }
-          await new Promise((r) => setTimeout(r, 500));
+        }
+
+        if (!chunkSuccess) {
+          hasUploadErrors = true;
+          ctrl.cancelled = true;
+          const failureMessage =
+            lastErrMsg.includes('507') ||
+            lastErrMsg.includes('storage full') ||
+            lastErrMsg.includes('disk full') ||
+            lastErrMsg.includes('No space')
+              ? 'Server storage limit reached on cloud container. For files > 500MB, use WebRTC or same Wi-Fi.'
+              : `Upload failed at chunk ${chunkIdx + 1} (${file.name}): connection interrupted`;
+
+          setTransfers((prev) =>
+            prev.map((t) =>
+              t.transfer_id === transferId
+                ? {
+                    ...t,
+                    status: 'failed',
+                    error_message: failureMessage,
+                  }
+                : t
+            )
+          );
+          break;
         }
       }
     };
@@ -504,11 +545,22 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     const workerPool = Array.from({ length: CONCURRENCY }, () => worker());
     await Promise.all(workerPool);
 
-    if (!ctrl.cancelled) {
+    if (!ctrl.cancelled && !hasUploadErrors) {
       try {
         await api.completeTransfer(transferId, 'http');
-      } catch (e) {
+      } catch (e: any) {
         console.warn('[HTTP] Error completing transfer on backend:', e);
+        setTransfers((prev) =>
+          prev.map((t) =>
+            t.transfer_id === transferId
+              ? {
+                  ...t,
+                  status: 'failed',
+                  error_message: e?.message || 'Verification failed on server',
+                }
+              : t
+          )
+        );
       }
     }
 

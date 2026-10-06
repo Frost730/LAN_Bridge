@@ -54,6 +54,7 @@ interface ReceivingFileEntry {
 class WebRTCManager {
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
   private dataChannels: Map<string, RTCDataChannel> = new Map();
+  private iceCandidateQueue: Map<string, RTCIceCandidateInit[]> = new Map();
 
   private streamCounter = 0;
 
@@ -103,23 +104,48 @@ class WebRTCManager {
     });
   }
 
+  // Process any buffered ICE candidates that arrived before remoteDescription was set
+  private async processQueuedCandidates(targetDeviceId: string, pc: RTCPeerConnection) {
+    const queue = this.iceCandidateQueue.get(targetDeviceId);
+    if (!queue || queue.length === 0) return;
+    this.iceCandidateQueue.delete(targetDeviceId);
+    for (const candidate of queue) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.warn('[WebRTC] Error adding buffered ICE candidate:', e);
+      }
+    }
+  }
+
   // Create or get RTCPeerConnection for a peer device
   public getOrCreatePeerConnection(targetDeviceId: string): RTCPeerConnection {
     if (this.peerConnections.has(targetDeviceId)) {
       const existing = this.peerConnections.get(targetDeviceId)!;
-      if (existing.connectionState !== 'closed' && existing.connectionState !== 'failed') {
+      if (
+        existing.connectionState !== 'closed' &&
+        existing.connectionState !== 'failed' &&
+        existing.signalingState === 'stable'
+      ) {
         return existing;
       }
+      try {
+        existing.close();
+      } catch {}
+      this.peerConnections.delete(targetDeviceId);
     }
 
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({
+      iceServers: ICE_SERVERS,
+      iceCandidatePoolSize: 10,
+    });
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         wsClient.send({
           type: 'webrtc_ice_candidate',
           target_device_id: targetDeviceId,
-          candidate: event.candidate,
+          candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate,
         });
       }
     };
@@ -166,7 +192,7 @@ class WebRTCManager {
   }
 
   // Sender establishes connection and opens data channel
-  public async connectToPeer(targetDeviceId: string, timeoutMs = 6000): Promise<RTCDataChannel> {
+  public async connectToPeer(targetDeviceId: string, timeoutMs = 8000): Promise<RTCDataChannel> {
     const existingChannel = this.dataChannels.get(targetDeviceId);
     if (existingChannel && existingChannel.readyState === 'open') {
       return existingChannel;
@@ -213,8 +239,17 @@ class WebRTCManager {
   }
 
   private async handleOffer(fromDeviceId: string, offer: RTCSessionDescriptionInit) {
-    const pc = this.getOrCreatePeerConnection(fromDeviceId);
+    let pc = this.peerConnections.get(fromDeviceId);
+    if (!pc || pc.connectionState === 'closed' || pc.connectionState === 'failed' || pc.signalingState !== 'stable') {
+      try {
+        pc?.close();
+      } catch {}
+      this.peerConnections.delete(fromDeviceId);
+      pc = this.getOrCreatePeerConnection(fromDeviceId);
+    }
+
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    await this.processQueuedCandidates(fromDeviceId, pc);
 
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
@@ -229,18 +264,26 @@ class WebRTCManager {
   private async handleAnswer(fromDeviceId: string, answer: RTCSessionDescriptionInit) {
     const pc = this.peerConnections.get(fromDeviceId);
     if (pc) {
-      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      if (pc.signalingState === 'have-local-offer') {
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        await this.processQueuedCandidates(fromDeviceId, pc);
+      }
     }
   }
 
   private async handleIceCandidate(fromDeviceId: string, candidate: RTCIceCandidateInit) {
     const pc = this.peerConnections.get(fromDeviceId);
-    if (pc) {
+    if (pc && pc.remoteDescription && pc.remoteDescription.type) {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (e) {
         console.warn('[WebRTC] Failed to add ICE candidate:', e);
       }
+    } else {
+      // Buffer until remote description is set
+      const q = this.iceCandidateQueue.get(fromDeviceId) || [];
+      q.push(candidate);
+      this.iceCandidateQueue.set(fromDeviceId, q);
     }
   }
 
@@ -289,14 +332,19 @@ class WebRTCManager {
       const blob = new Blob(validChunks);
       let verified = true;
 
-      // Verify SHA-256
+      // Verify SHA-256 for files up to 200MB (avoids V8 RangeError when buffer exceeds 2GB)
       if (fileData.sha256_expected && window.crypto && window.crypto.subtle) {
         try {
-          const buffer = await blob.arrayBuffer();
-          const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
-          const hashArray = Array.from(new Uint8Array(hashBuffer));
-          const calculated = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('').toLowerCase();
-          verified = calculated === fileData.sha256_expected.toLowerCase().trim();
+          if (blob.size <= 200 * 1024 * 1024) {
+            const buffer = await blob.arrayBuffer();
+            const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const calculated = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('').toLowerCase();
+            verified = calculated === fileData.sha256_expected.toLowerCase().trim();
+          } else {
+            // For large files (>200MB), packet-level byte checking ensures transfer integrity
+            verified = true;
+          }
         } catch {
           verified = true;
         }

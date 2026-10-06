@@ -160,7 +160,13 @@ async def complete_transfer(transfer_id: str, transport: str = Query("webrtc")) 
     if not session:
         raise HTTPException(status_code=404, detail="Transfer not found")
 
-    await transfer_manager.complete_transfer(transfer_id, transport=transport)
+    success = await transfer_manager.complete_transfer(transfer_id, transport=transport)
+    if not success:
+        await ws_manager.broadcast({
+            "type": "transfer_updated",
+            "transfer": session.to_dict()
+        })
+        raise HTTPException(status_code=400, detail=session.error_message or "Could not complete transfer")
 
     await ws_manager.broadcast({
         "type": "transfer_completed",
@@ -201,13 +207,29 @@ async def upload_chunk(
     if session and file_obj and file_obj.size == 0 and not file_obj.final_filepath:
         transfer_manager._finalize_empty_file(session, file_obj)
 
-    success, error = await transfer_manager.write_chunk(
-        transfer_id=transfer_id,
-        file_id=file_id,
-        chunk_index=chunk_index,
-        offset=offset,
-        data=body
-    )
+    try:
+        success, error = await transfer_manager.write_chunk(
+            transfer_id=transfer_id,
+            file_id=file_id,
+            chunk_index=chunk_index,
+            offset=offset,
+            data=body
+        )
+    except OSError as e:
+        if getattr(e, "errno", None) == 28:  # ENOSPC
+            logger.error(f"Render disk full during chunk upload for transfer {transfer_id}: {e}")
+            if session:
+                session.status = TransferState.FAILED
+                session.error_message = "Server disk full. For large files, use direct WebRTC P2P or local Wi-Fi."
+                await ws_manager.broadcast({
+                    "type": "transfer_updated",
+                    "transfer": session.to_dict()
+                })
+            raise HTTPException(
+                status_code=507,
+                detail="Server storage full. Use WebRTC P2P or local Wi-Fi for files larger than cloud capacity."
+            )
+        raise HTTPException(status_code=500, detail=str(e))
 
     if not success:
         raise HTTPException(status_code=400, detail=error or "Chunk write failed")

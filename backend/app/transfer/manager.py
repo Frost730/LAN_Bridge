@@ -220,6 +220,33 @@ class TransferManager:
         session = self.get_transfer(transfer_id)
         if not session:
             return False
+
+        # For HTTP relay transfers, verify all files actually exist and completed successfully
+        if transport == "http":
+            for f in session.files.values():
+                if f.size == 0:
+                    if not f.final_filepath:
+                        self._finalize_empty_file(session, f)
+                    continue
+                if not f.final_filepath or not os.path.exists(f.final_filepath):
+                    # Check if temp file exists and has all bytes
+                    if f.temp_filepath and os.path.exists(f.temp_filepath):
+                        actual_size = os.path.getsize(f.temp_filepath)
+                        if actual_size >= f.size:
+                            verified, err = await self._verify_and_finalize_file(session, f)
+                            if not verified:
+                                session.status = TransferState.FAILED
+                                session.error_message = f"Integrity check failed: {err}"
+                                return False
+                        else:
+                            session.status = TransferState.FAILED
+                            session.error_message = f"Incomplete transfer: received {actual_size}/{f.size} bytes (server disk limit may have been reached)"
+                            return False
+                    else:
+                        session.status = TransferState.FAILED
+                        session.error_message = "File payload missing on server or storage limit exceeded"
+                        return False
+
         session.status = TransferState.COMPLETED
         session.completed_at = time.time()
         session.transport = transport
