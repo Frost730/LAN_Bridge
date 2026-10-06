@@ -3,7 +3,7 @@ import sys
 import socket
 import platform
 from fastapi import APIRouter, Request, HTTPException
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from ..database.db import db
 from ..websocket.manager import ws_manager
 from ..discovery.interfaces import get_primary_lan_ip
