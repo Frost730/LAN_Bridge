@@ -19,8 +19,9 @@ COPY run.py /app/run.py
 # Create persistent storage directories with full permissions for non-root containers
 RUN mkdir -p /app/data /app/received /app/temp && chmod -R 777 /app
 
-# Expose default HTTP / WebSocket port
-EXPOSE 8000
+# Render standard container port
+ENV PORT=10000
+EXPOSE 10000
 
 # Run LANBridge server
 CMD ["python", "run.py"]

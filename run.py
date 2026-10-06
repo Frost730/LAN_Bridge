@@ -42,7 +42,7 @@ def main():
         port=port,
         reload=False,
         log_level="info",
-        access_log=False,
+        access_log=bool(is_cloud),
     )
 
 if __name__ == "__main__":

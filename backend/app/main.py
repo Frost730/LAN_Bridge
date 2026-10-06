@@ -146,6 +146,11 @@ async def websocket_endpoint(
         logger.debug(f"WebSocket error: {e}")
         await ws_manager.disconnect(websocket)
 
+@app.get("/health")
+@app.get("/healthz")
+async def health_check():
+    return {"status": "ok", "app": settings.APP_NAME, "version": settings.VERSION}
+
 # Serve built frontend in production mode
 DIST_DIR = BASE_DIR / "frontend" / "dist"
 if DIST_DIR.exists():
@@ -156,4 +161,7 @@ if DIST_DIR.exists():
         file_path = DIST_DIR / full_path
         if file_path.is_file():
             return FileResponse(file_path)
-        return FileResponse(DIST_DIR / "index.html")
+        index_file = DIST_DIR / "index.html"
+        if index_file.is_file():
+            return FileResponse(index_file)
+        return {"status": "ok", "message": "LANBridge is running"}
