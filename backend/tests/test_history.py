@@ -161,3 +161,49 @@ async def test_api_history_endpoints(tmp_path, monkeypatch):
         # pc-1 should still have record
         resp = await client.get("/api/history?device_id=pc-1")
         assert len(resp.json()) == 1
+
+@pytest.mark.asyncio
+async def test_history_no_duplicates(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "db_path", tmp_path / "test_history_dedup.db")
+    await db.init_db()
+
+    # Call add_history 3 times with the exact same transfer_id and direction
+    for i in range(3):
+        await db.add_history(
+            transfer_id="tx-dup-1",
+            device_name="Alice",
+            direction="sent",
+            filename="document.docx",
+            size=4096,
+            result="completed",
+            sender_device_id="sender-xyz",
+            receiver_device_id="receiver-abc"
+        )
+
+    # Must only have 1 single record, not 3!
+    sender_history = await db.get_history_for_device("sender-xyz")
+    assert len(sender_history) == 1
+
+    # Now simulate TransferManager calling complete_transfer twice on the same session
+    manager = TransferManager()
+    session = manager.create_transfer(
+        transfer_id="tx-mgr-dedup",
+        sender_device_id="dev-s1",
+        sender_name="Alice",
+        receiver_device_id="dev-r1",
+        receiver_name="Bob",
+        is_folder=False,
+        root_name="test.txt",
+        files_data=[{"file_id": "f1", "filename": "test.txt", "relative_path": "test.txt", "size": 100}]
+    )
+
+    # First complete
+    await manager.complete_transfer("tx-mgr-dedup")
+    # Second complete (e.g. from both frontend calls or chunk finished)
+    await manager.complete_transfer("tx-mgr-dedup")
+
+    s1_history = await db.get_history_for_device("dev-s1")
+    assert len(s1_history) == 1
+    r1_history = await db.get_history_for_device("dev-r1")
+    assert len(r1_history) == 1
+

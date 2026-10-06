@@ -108,6 +108,22 @@ class Database:
                 await db.execute("ALTER TABLE history ADD COLUMN receiver_device_id TEXT")
             except Exception:
                 pass
+            # Remove any duplicate history entries from previous transfers
+            try:
+                await db.execute("""
+                    DELETE FROM history 
+                    WHERE id NOT IN (
+                        SELECT MIN(id) 
+                        FROM history 
+                        GROUP BY transfer_id, direction
+                    )
+                """)
+            except Exception:
+                pass
+            try:
+                await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_history_unique ON history(transfer_id, direction)")
+            except Exception:
+                pass
             await db.commit()
 
     async def get_setting(self, key: str, default: Any = None) -> Any:
@@ -190,6 +206,21 @@ class Database:
     ) -> None:
         import time
         async with self.get_connection() as db:
+            # Check for existing record to prevent duplicate entries
+            async with db.execute(
+                "SELECT id FROM history WHERE transfer_id = ? AND direction = ?",
+                (transfer_id, direction)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    await db.execute("""
+                        UPDATE history 
+                        SET result = ?, device_name = ?, filename = ?, size = ?
+                        WHERE id = ?
+                    """, (result, device_name, filename, size, row[0]))
+                    await db.commit()
+                    return
+
             await db.execute("""
                 INSERT INTO history (transfer_id, sender_device_id, receiver_device_id, device_name, direction, filename, size, timestamp, result)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
