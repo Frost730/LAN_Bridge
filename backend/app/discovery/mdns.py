@@ -74,6 +74,13 @@ class MDNSManager:
     def start(self, device_name: str, port: int, device_id: str) -> None:
         if self.is_running:
             return
+        
+        # In cloud environments (Render/Docker/Kubernetes), local UDP multicast is not available
+        import os
+        if bool(os.getenv("RENDER") or os.getenv("LANBRIDGE_CLOUD") or os.getenv("SPACE_ID")):
+            logger.info("Cloud environment detected — mDNS local multicast skipped (WebSocket/WebRTC signaling active)")
+            return
+
         try:
             primary_ip = get_primary_lan_ip()
             ip_bytes = socket.inet_aton(primary_ip)
