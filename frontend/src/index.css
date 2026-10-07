@@ -9,6 +9,16 @@
     scroll-behavior: smooth;
   }
 
+  html.dark {
+    color-scheme: dark;
+    background-color: #020617;
+  }
+
+  html:not(.dark) {
+    color-scheme: light;
+    background-color: #f8fafc;
+  }
+
   body {
     overscroll-behavior-y: none;
     -webkit-overflow-scrolling: touch;

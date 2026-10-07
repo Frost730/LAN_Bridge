@@ -16,8 +16,14 @@ export function useTheme() {
         theme === 'dark' || (theme === 'system' && mediaQuery.matches);
       if (isDark) {
         root.classList.add('dark');
+        root.style.colorScheme = 'dark';
       } else {
         root.classList.remove('dark');
+        root.style.colorScheme = 'light';
+      }
+      const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+      if (themeColorMeta) {
+        themeColorMeta.setAttribute('content', isDark ? '#020617' : '#1468f5');
       }
     };
 

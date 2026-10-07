@@ -14,8 +14,25 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/app-icon.png" />
     <title>LANBridge</title>
-    <script type="module" crossorigin src="/assets/index-Dtfag6CH.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-ZDUw4dy0.css">
+    <!-- Prevent theme flash before React hydration -->
+    <script>
+      (function() {
+        try {
+          var stored = localStorage.getItem('lanbridge_theme') || 'system';
+          var isDark = stored === 'dark' || (stored === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var root = document.documentElement;
+          if (isDark) {
+            root.classList.add('dark');
+            root.style.colorScheme = 'dark';
+          } else {
+            root.classList.remove('dark');
+            root.style.colorScheme = 'light';
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-BjpqZJNb.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DNfbkjm3.css">
   </head>
   <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-screen selection:bg-brand-500 selection:text-white antialiased">
     <div id="root"></div>
