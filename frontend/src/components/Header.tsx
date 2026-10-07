@@ -179,6 +179,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Theme Switcher */}
           <button
+            type="button"
             onClick={() => onThemeChange(theme === 'dark' ? 'light' : 'dark')}
             className="p-2 rounded-xl text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors"
             title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
