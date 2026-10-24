@@ -3,9 +3,10 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Prevent Python from writing .pyc and enable unbuffered output
+# Prevent Python from writing .pyc, enable unbuffered output, and suppress root pip warning in container
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PIP_ROOT_USER_ACTION=ignore
 
 # Update system CA certificate store to revoke compromised CAs (Render eMudhra advisory)
 RUN apt-get update && \
