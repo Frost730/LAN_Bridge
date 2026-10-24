@@ -7,9 +7,16 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+# Update system CA certificate store to revoke compromised CAs (Render eMudhra advisory)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    update-ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install runtime dependencies
 COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip certifi && \
+    pip install --no-cache-dir -r /app/backend/requirements.txt
 
 # Copy application files
 COPY backend /app/backend
