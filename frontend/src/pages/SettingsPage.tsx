@@ -24,6 +24,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     const savedConcurrency = parseInt(localStorage.getItem('lanbridge_concurrent_transfers') || '3', 10);
     const savedChunkSize = parseInt(localStorage.getItem('lanbridge_chunk_size') || '2097152', 10);
     const savedPerf = localStorage.getItem('lanbridge_performance_mode') === 'true';
+    const savedNotif = localStorage.getItem('lanbridge_notifications') !== 'false';
     return {
       device_name: localDevice.device_name,
       server_port: 8000,
@@ -31,7 +32,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
       concurrent_transfers: savedConcurrency,
       chunk_size: savedChunkSize,
       performance_mode: savedPerf,
-      notifications: true,
+      notifications: savedNotif,
       theme: currentTheme,
     };
   });
@@ -59,11 +60,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
         const savedConcurrency = localStorage.getItem('lanbridge_concurrent_transfers');
         const savedChunkSize = localStorage.getItem('lanbridge_chunk_size');
         const savedPerf = localStorage.getItem('lanbridge_performance_mode');
+        const savedNotif = localStorage.getItem('lanbridge_notifications');
 
         setSettings({
           ...s,
           device_name: localDevice.device_name,
           theme: currentTheme,
+          notifications: savedNotif !== null ? savedNotif !== 'false' : (s.notifications !== false),
           concurrent_transfers: savedConcurrency ? parseInt(savedConcurrency, 10) : (s.concurrent_transfers || 3),
           chunk_size: savedChunkSize ? parseInt(savedChunkSize, 10) : (s.chunk_size || 2097152),
           performance_mode: savedPerf !== null ? (savedPerf === 'true') : Boolean(s.performance_mode),
@@ -281,7 +284,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           <div className="flex items-center space-x-2">
             <Palette className="w-5 h-5 text-indigo-500" />
             <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-              Appearance
+              Appearance & Notifications
             </h3>
           </div>
 
@@ -309,6 +312,27 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
               </button>
             ))}
           </div>
+
+          <label className="flex items-center justify-between cursor-pointer pt-3 border-t border-slate-100 dark:border-slate-800">
+            <div>
+              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
+                OS & Browser Notifications
+              </span>
+              <span className="text-[11px] text-slate-500">
+                Receive system toast notifications for incoming file requests, pairing, and transfer completions.
+              </span>
+            </div>
+            <input
+              type="checkbox"
+              checked={settings.notifications}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setSettings((prev) => ({ ...prev, notifications: checked }));
+                localStorage.setItem('lanbridge_notifications', String(checked));
+              }}
+              className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500"
+            />
+          </label>
         </div>
 
         {/* Server Host Controls (Cloud vs Local Desktop) */}

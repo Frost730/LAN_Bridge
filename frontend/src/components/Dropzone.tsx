@@ -121,7 +121,6 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelected, disabled = 
     }
     const rootName = selected.length === 1 ? selected[0].file.name : `${selected.length} Files`;
     onFilesSelected(selected, false, rootName);
-    e.target.value = '';
   };
 
   const handleFolderInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,7 +151,9 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelected, disabled = 
     }
 
     onFilesSelected(selected, true, rootName);
-    e.target.value = '';
+    // Note: Do not clear e.target.value here; in Chromium on Windows, clearing input.value
+    // invalidates active FileList file descriptors before hashing or streaming can read them.
+    // The input is already cleared in onClick before picking a new folder.
   };
 
   return (
