@@ -24,7 +24,7 @@ interface TransferCardProps {
   onDelete?: (transferId: string) => void;
 }
 
-export const TransferCard: React.FC<TransferCardProps> = ({
+export const TransferCard: React.FC<TransferCardProps> = React.memo(({
   transfer,
   onPause,
   onResume,
@@ -226,4 +226,6 @@ export const TransferCard: React.FC<TransferCardProps> = ({
       </div>
     </div>
   );
-};
+});
+
+TransferCard.displayName = 'TransferCard';

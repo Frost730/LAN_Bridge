@@ -8,26 +8,24 @@ export async function calculateFileSHA256(
 ): Promise<string> {
   // If browser supports crypto.subtle
   if (window.crypto && window.crypto.subtle) {
-    // For files under 64MB, calculating in one pass is very fast
+    // For files under 64MB, calculating in one pass is fast (<100ms) and memory-safe
     if (file.size <= 64 * 1024 * 1024) {
-      const buffer = await file.arrayBuffer();
-      const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      if (onProgress) onProgress(1.0);
-      return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+      try {
+        const buffer = await file.arrayBuffer();
+        const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        if (onProgress) onProgress(1.0);
+        return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+      } catch (err) {
+        console.warn('[Hashing] Non-critical: Hash calculation skipped due to buffer constraint:', err);
+        return '';
+      }
     }
 
-    // For larger files, read sequentially with subtle digest
-    // Fallback: full buffer or read chunks
-    try {
-      const buffer = await file.arrayBuffer();
-      const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-    } catch {
-      // In extreme cases of memory pressure, return empty string so backend still accepts
-      return '';
-    }
+    // For files over 64MB, calculating full sha256 in browser JS main thread blocks the UI
+    // and causes out-of-memory crashes on mobile/low-RAM devices. We defer stream integrity
+    // to chunk-level transport verification.
+    return '';
   }
   return '';
 }

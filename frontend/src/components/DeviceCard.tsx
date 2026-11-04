@@ -9,7 +9,7 @@ interface DeviceCardProps {
   onDisconnect?: (device: DeviceInfo) => void;
 }
 
-export const DeviceCard: React.FC<DeviceCardProps> = ({
+export const DeviceCard: React.FC<DeviceCardProps> = React.memo(({
   device,
   onSendToDevice,
   onChatWithDevice,
@@ -94,4 +94,6 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
       </div>
     </div>
   );
-};
+});
+
+DeviceCard.displayName = 'DeviceCard';

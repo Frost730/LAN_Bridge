@@ -78,6 +78,10 @@ CREATE TABLE IF NOT EXISTS history (
 CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_history_sender ON history(sender_device_id);
 CREATE INDEX IF NOT EXISTS idx_history_receiver ON history(receiver_device_id);
+CREATE INDEX IF NOT EXISTS idx_history_sender_dir ON history(direction, sender_device_id);
+CREATE INDEX IF NOT EXISTS idx_history_receiver_dir ON history(direction, receiver_device_id);
+CREATE INDEX IF NOT EXISTS idx_transfers_created ON transfers(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_transfers_status ON transfers(status);
 CREATE INDEX IF NOT EXISTS idx_transfer_files_transfer ON transfer_files(transfer_id);
 """
 
@@ -92,12 +96,14 @@ class Database:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             await db.execute("PRAGMA foreign_keys = ON")
+            await db.execute("PRAGMA synchronous = NORMAL")
             yield db
 
     async def init_db(self) -> None:
         """Initializes tables and default settings"""
         settings.ensure_directories()
         async with self.get_connection() as db:
+            await db.execute("PRAGMA journal_mode = WAL")
             await db.executescript(CREATE_TABLES_SQL)
             # Automatic schema migration for existing databases
             try:

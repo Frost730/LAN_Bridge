@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Dropzone } from '../components/Dropzone';
 import { DeviceCard } from '../components/DeviceCard';
 import { TransferCard } from '../components/TransferCard';
@@ -78,12 +78,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  const activeTransfers = transfers.filter(
-    (t) => t.status === 'transferring' || t.status === 'paused' || t.status === 'waiting_for_acceptance' || t.status === 'queued'
+  const activeTransfers = useMemo(
+    () =>
+      transfers.filter(
+        (t) =>
+          t.status === 'transferring' ||
+          t.status === 'paused' ||
+          t.status === 'waiting_for_acceptance' ||
+          t.status === 'queued'
+      ),
+    [transfers]
   );
-  const recentTransfers = transfers
-    .filter((t) => !(t.status === 'cancelled' && t.bytes_transferred === 0))
-    .slice(0, 5);
+  const recentTransfers = useMemo(
+    () =>
+      transfers
+        .filter((t) => !(t.status === 'cancelled' && t.bytes_transferred === 0))
+        .slice(0, 5),
+    [transfers]
+  );
 
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
