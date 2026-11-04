@@ -91,6 +91,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+import re
+from urllib.parse import urlparse
+
 # Security Headers & Hardening Middleware
 @app.middleware("http")
 async def apply_security_headers(request: Request, call_next):
@@ -99,6 +102,16 @@ async def apply_security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(self), microphone=(), geolocation=(), payment=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "font-src 'self' data:; "
+        "connect-src 'self' ws: wss: https:; "
+        "object-src 'none'; "
+        "base-uri 'self';"
+    )
     if cloud_deployment or request.url.scheme == "https":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -106,12 +119,46 @@ async def apply_security_headers(request: Request, call_next):
 # GZip Compression Middleware (Compresses responses >= 1000 bytes)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# CORS configuration
+# Permitted CORS and WebSocket origin patterns:
+# - Localhost / loopback on any port
+# - RFC 1918 Private LAN IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+# - Link-local (169.254.x.x) and mDNS (.local)
+# - Cloud hosting domains (onrender.com, hf.space, render.com)
+CORS_ORIGIN_REGEX = (
+    r"^https?://"
+    r"("
+    r"localhost|127\.0\.0\.1|"
+    r"192\.168\.\d{1,3}\.\d{1,3}|"
+    r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+    r"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
+    r"169\.254\.\d{1,3}\.\d{1,3}|"
+    r"[a-zA-Z0-9-]+\.local|"
+    r"([a-zA-Z0-9-]+\.)*(onrender\.com|hf\.space|render\.com)"
+    r")"
+    r"(:\d+)?$"
+)
+CORS_ORIGIN_COMPILED = re.compile(CORS_ORIGIN_REGEX, re.IGNORECASE)
+
+def is_allowed_origin(origin: Optional[str], host_header: Optional[str] = None) -> bool:
+    if not origin:
+        return True
+    if CORS_ORIGIN_COMPILED.match(origin):
+        return True
+    if host_header:
+        try:
+            parsed = urlparse(origin)
+            if parsed.netloc.lower() == host_header.lower():
+                return True
+        except Exception:
+            pass
+    return False
+
+# Hardened CORS configuration preventing arbitrary web domains from accessing local LAN APIs
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=False,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -133,6 +180,14 @@ async def websocket_endpoint(
     browser: str = Query("unknown"),
     room: Optional[str] = Query(None)
 ):
+    # Verify WebSocket Origin to prevent Cross-Site WebSocket Hijacking (CSWSH)
+    origin = websocket.headers.get("origin")
+    host_header = websocket.headers.get("host")
+    if origin and not is_allowed_origin(origin, host_header):
+        logger.warning(f"Blocked cross-origin WebSocket connection from untrusted origin: {origin}")
+        await websocket.close(code=1008, reason="Untrusted Origin")
+        return
+
     forwarded_for = websocket.headers.get("x-forwarded-for")
     if forwarded_for:
         client_ip = forwarded_for.split(",")[0].strip()
@@ -143,17 +198,21 @@ async def websocket_endpoint(
 
     peer = await ws_manager.connect(
         websocket=websocket,
-        device_id=device_id,
-        device_name=device_name,
-        device_type=device_type,
-        os_name=os,
-        browser=browser,
+        device_id=device_id[:128],
+        device_name=device_name[:64],
+        device_type=device_type[:32],
+        os_name=os[:32],
+        browser=browser[:32],
         ip=client_ip,
-        initial_room=room
+        initial_room=room[:64] if room else None
     )
     try:
         while True:
             data = await websocket.receive_text()
+            if len(data) > 65536:
+                logger.warning(f"WebSocket message from {device_id} exceeded maximum size (64KB)")
+                continue
+
             # Handle client-side ping/heartbeat
             if data == "ping":
                 await websocket.send_text("pong")
@@ -165,11 +224,25 @@ async def websocket_endpoint(
                 msg = json.loads(data)
                 msg_type = msg.get("type")
 
+                # Whitelist client-originated message types to prevent server event spoofing
+                ALLOWED_CLIENT_WS_TYPES = {
+                    "webrtc_offer",
+                    "webrtc_answer",
+                    "webrtc_ice_candidate",
+                    "chat_message",
+                    "join_room",
+                    "leave_room",
+                }
+                if msg_type not in ALLOWED_CLIENT_WS_TYPES:
+                    logger.warning(f"Ignored unauthorized client-originated WS event type '{msg_type}' from {device_id}")
+                    continue
+
                 # Handle temporary room commands
                 if msg_type == "join_room":
-                    room_name = msg.get("room")
-                    if room_name:
-                        ws_manager.join_room(device_id, str(room_name).strip())
+                    raw_room = str(msg.get("room", "")).strip()[:64]
+                    clean_room = re.sub(r"[^a-zA-Z0-9_-]", "", raw_room)
+                    if clean_room:
+                        ws_manager.join_room(device_id, clean_room)
                         await ws_manager.broadcast_peer_list()
                     continue
                 elif msg_type == "leave_room":
@@ -180,6 +253,9 @@ async def websocket_endpoint(
                 # Handle peer-to-peer / room chat messages
                 if msg_type == "chat_message":
                     msg["from_device_id"] = device_id
+                    # Cap chat message text length to prevent memory abuse
+                    if "message" in msg and isinstance(msg["message"], str) and len(msg["message"]) > 4096:
+                        msg["message"] = msg["message"][:4096]
                     await ws_manager.send_chat_message(device_id, msg)
                     continue
 
@@ -233,16 +309,19 @@ if DIST_DIR.exists():
 
     @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
     async def serve_spa(full_path: str):
-        file_path = DIST_DIR / full_path
-        if file_path.is_file():
-            # If index.html is requested directly, ensure no-cache
-            if file_path.name == "index.html":
-                return get_index_response(file_path)
-            res = FileResponse(file_path)
-            # Manifest, icons, favicons: cache for 1 day
-            if file_path.suffix.lower() in (".ico", ".png", ".jpg", ".jpeg", ".svg", ".webmanifest"):
-                res.headers["Cache-Control"] = "public, max-age=86400"
-            return res
+        try:
+            dist_resolved = DIST_DIR.resolve()
+            file_path = (DIST_DIR / full_path).resolve()
+            # Verify that requested path is strictly within DIST_DIR to prevent path traversal
+            if file_path.is_file() and file_path.is_relative_to(dist_resolved):
+                if file_path.name == "index.html":
+                    return get_index_response(file_path)
+                res = FileResponse(file_path)
+                if file_path.suffix.lower() in (".ico", ".png", ".jpg", ".jpeg", ".svg", ".webmanifest"):
+                    res.headers["Cache-Control"] = "public, max-age=86400"
+                return res
+        except Exception:
+            pass
 
         index_file = DIST_DIR / "index.html"
         if index_file.is_file():

@@ -39,20 +39,20 @@ class PairApprovalPayload(BaseModel):
     trust_device: bool = False
 
 class TransferFileMetadata(BaseModel):
-    file_id: str
-    filename: str
-    relative_path: str
-    size: int
-    sha256: Optional[str] = None
+    file_id: str = Field(..., max_length=128)
+    filename: str = Field(..., max_length=255)
+    relative_path: str = Field(..., max_length=1024)
+    size: int = Field(..., ge=0)
+    sha256: Optional[str] = Field(None, max_length=64)
 
 class TransferCreatePayload(BaseModel):
-    sender_device_id: str
-    sender_name: str
-    receiver_device_id: str
+    sender_device_id: str = Field(..., max_length=128)
+    sender_name: str = Field(..., max_length=64)
+    receiver_device_id: str = Field(..., max_length=128)
     is_folder: bool = False
-    root_name: str
-    chunk_size: Optional[int] = 2097152
-    files: List[TransferFileMetadata]
+    root_name: str = Field(..., max_length=255)
+    chunk_size: Optional[int] = Field(2097152, ge=65536, le=33554432)
+    files: List[TransferFileMetadata] = Field(..., min_length=1, max_length=10000)
 
 class TransferFileStatus(BaseModel):
     file_id: str

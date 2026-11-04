@@ -110,3 +110,16 @@ def get_unique_destination_path(target_path: Path) -> Path:
         if not candidate.exists():
             return candidate
         counter += 1
+
+def is_safe_subpath(child_path: Union[str, Path], base_dir: Union[str, Path]) -> bool:
+    """
+    Verifies that child_path resolves strictly within base_dir (preventing path traversal).
+    Returns False if path attempts to escape base_dir or on invalid input.
+    """
+    try:
+        base_resolved = Path(base_dir).resolve()
+        child_resolved = Path(child_path).resolve()
+        return child_resolved.is_relative_to(base_resolved)
+    except Exception:
+        return False
+

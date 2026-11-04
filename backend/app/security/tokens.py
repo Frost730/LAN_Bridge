@@ -64,8 +64,20 @@ class TokenManager:
             return None
         return self._current_pairing_code.code, remaining
 
+    def _prune_expired_tokens(self) -> None:
+        """Removes expired pairing tokens and limits cache size to prevent memory leaks"""
+        now = time.time()
+        expired = [t for t, d in self._pairing_tokens.items() if now > d.expires_at or d.used]
+        for t in expired:
+            self._pairing_tokens.pop(t, None)
+        if len(self._pairing_tokens) > 500:
+            sorted_tokens = sorted(self._pairing_tokens.items(), key=lambda x: x[1].created_at)
+            for t, _ in sorted_tokens[:len(self._pairing_tokens) - 500]:
+                self._pairing_tokens.pop(t, None)
+
     def generate_pairing_token(self, owner_device_id: Optional[str] = None) -> str:
         """Generates a secure random pairing token for QR code"""
+        self._prune_expired_tokens()
         token = secrets.token_urlsafe(32)
         now = time.time()
         self._pairing_tokens[token] = PairingTokenData(

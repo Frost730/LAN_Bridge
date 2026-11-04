@@ -15,6 +15,7 @@ from ..transfer.protocol import TransferState, FileTransferState
 from ..transfer.manager import transfer_manager
 from ..websocket.manager import ws_manager
 from ..models.schemas import TransferCreatePayload
+from ..security.sanitization import sanitize_filename, is_safe_subpath
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/transfers", tags=["transfers"])
@@ -22,15 +23,25 @@ router = APIRouter(prefix="/api/transfers", tags=["transfers"])
 @router.post("")
 async def create_transfer(payload: TransferCreatePayload) -> Dict[str, Any]:
     transfer_id = str(uuid.uuid4())
+    safe_root_name = sanitize_filename(payload.root_name) if payload.root_name else "Transfer"
+    sanitized_files = []
+    for f in payload.files:
+        fd = f.model_dump()
+        fd["filename"] = sanitize_filename(fd.get("filename", "unnamed_file"))
+        raw_rel = (fd.get("relative_path") or fd["filename"]).replace("\\", "/").lstrip("/")
+        parts = [sanitize_filename(p) for p in raw_rel.split("/") if p and p not in (".", "..")]
+        fd["relative_path"] = "/".join(parts) if parts else fd["filename"]
+        sanitized_files.append(fd)
+
     session = transfer_manager.create_transfer(
         transfer_id=transfer_id,
         sender_device_id=payload.sender_device_id,
-        sender_name=payload.sender_name,
+        sender_name=payload.sender_name[:64],
         receiver_device_id=payload.receiver_device_id,
         receiver_name="Target Device",
         is_folder=payload.is_folder,
-        root_name=payload.root_name,
-        files_data=[f.model_dump() for f in payload.files],
+        root_name=safe_root_name,
+        files_data=sanitized_files,
         chunk_size=payload.chunk_size or 2097152
     )
 
@@ -222,13 +233,26 @@ async def upload_chunk(
     chunk_index: int = Query(...),
     offset: int = Query(...)
 ) -> Dict[str, Any]:
-    # Stream raw binary bytes directly without memory duplication
+    if chunk_index < 0 or offset < 0:
+        raise HTTPException(status_code=400, detail="Invalid chunk parameters: chunk_index and offset must be non-negative")
+
+    # Limit chunk payload size to prevent memory exhaustion (max 32MB)
+    content_len = request.headers.get("content-length")
+    if content_len and int(content_len) > 33554432:
+        raise HTTPException(status_code=413, detail="Chunk payload exceeds maximum allowed size (32MB)")
+
+    body = await request.body()
+    if len(body) > 33554432:
+        raise HTTPException(status_code=413, detail="Chunk payload exceeds maximum allowed size (32MB)")
+
     session = transfer_manager.get_transfer(transfer_id)
     file_obj = session.files.get(file_id) if session else None
 
-    body = await request.body()
     if not body and not (file_obj and file_obj.size == 0):
         raise HTTPException(status_code=400, detail="Empty chunk payload")
+
+    if file_obj and offset > file_obj.size + 16777216:
+        raise HTTPException(status_code=400, detail="Chunk offset exceeds declared file boundary")
 
     # If empty file and not yet materialized, finalize it
     if session and file_obj and file_obj.size == 0 and not file_obj.final_filepath:
@@ -301,16 +325,23 @@ async def delete_file_safely(file_path: str, delay_seconds: int = 1800):
     Safely unlinks/destroys ephemeral files from disk after transfer stream finishes
     and a grace period has passed (settings.AUTO_DELETE_DELAY_SECONDS) to prevent
     race conditions with browser HEAD requests, range inspection, or chunk retries.
+    Strictly verifies that file_path resolves within RECEIVED_DIR.
     """
     try:
         if delay_seconds > 0:
             await asyncio.sleep(delay_seconds)
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
+        if not file_path:
+            return
+        resolved = Path(file_path).resolve()
+        received_p = Path(settings.RECEIVED_DIR).resolve()
+        if not resolved.is_relative_to(received_p) or resolved == received_p:
+            logger.warning(f"Refusing to delete path outside RECEIVED_DIR: {file_path}")
+            return
+        if resolved.exists():
+            resolved.unlink(missing_ok=True)
             logger.info(f"Ephemeral privacy: safely deleted {file_path} after {delay_seconds}s grace period.")
-            p = Path(file_path).parent
-            received_p = Path(settings.RECEIVED_DIR).resolve()
-            while p.resolve() != received_p and p.exists():
+            p = resolved.parent
+            while p != received_p and p.exists():
                 try:
                     if not any(p.iterdir()):
                         p.rmdir()
@@ -340,13 +371,14 @@ async def download_file(
         history = await db.get_history(limit=50)
         matched = next((h for h in history if h.get("transfer_id") == transfer_id), None)
         if matched:
-            cand = settings.RECEIVED_DIR / matched["filename"]
-            if cand.exists():
+            safe_fname = sanitize_filename(matched["filename"])
+            cand = (settings.RECEIVED_DIR / safe_fname).resolve()
+            if cand.exists() and is_safe_subpath(cand, settings.RECEIVED_DIR):
                 if await should_auto_delete():
                     background_tasks.add_task(delete_file_safely, str(cand), settings.AUTO_DELETE_DELAY_SECONDS)
                 return FileResponse(
                     path=str(cand),
-                    filename=matched["filename"],
+                    filename=safe_fname,
                     media_type="application/octet-stream"
                 )
         raise HTTPException(status_code=404, detail="Transfer not found or expired")
@@ -369,20 +401,22 @@ async def download_file(
         transfer_manager._finalize_empty_file(session, file_obj)
 
     if not file_obj.final_filepath or not os.path.exists(file_obj.final_filepath):
-        # As last check, verify if filename exists in settings.RECEIVED_DIR
-        cand = settings.RECEIVED_DIR / file_obj.filename
-        if cand.exists():
+        cand = (settings.RECEIVED_DIR / sanitize_filename(file_obj.filename)).resolve()
+        if cand.exists() and is_safe_subpath(cand, settings.RECEIVED_DIR):
             file_obj.final_filepath = str(cand)
         else:
             raise HTTPException(status_code=404, detail="File not ready or does not exist")
 
     filepath = file_obj.final_filepath
+    if not is_safe_subpath(filepath, settings.RECEIVED_DIR):
+        raise HTTPException(status_code=403, detail="Access denied: invalid file path")
+
     if await should_auto_delete():
         background_tasks.add_task(delete_file_safely, filepath, settings.AUTO_DELETE_DELAY_SECONDS)
 
     return FileResponse(
         path=filepath,
-        filename=file_obj.filename,
+        filename=sanitize_filename(file_obj.filename),
         media_type="application/octet-stream"
     )
 
@@ -390,31 +424,52 @@ async def download_file(
 async def download_transfer_zip(transfer_id: str, background_tasks: BackgroundTasks):
     """
     Provides graceful fallback for folder and multi-file downloads on browsers
-    that do not support native directory writing (Requirement 10 & 49).
+    that do not support native directory writing.
+    Streams to temporary disk file to avoid Out-Of-Memory (OOM) crashes
+    and strictly sanitizes archive paths to prevent Zip Slip vulnerability.
     """
     session = transfer_manager.get_transfer(transfer_id)
     if not session:
         raise HTTPException(status_code=404, detail="Transfer not found")
 
-    # Build zip in memory/stream
-    zip_buffer = io.BytesIO()
+    safe_root = sanitize_filename(session.root_name) if session.root_name else "Transfer"
+    zip_filename = f"{safe_root}.zip" if session.is_folder else f"{session.transfer_id[:8]}_files.zip"
+
+    # Write to a temporary file on disk instead of memory BytesIO to avoid OOM crashes
+    temp_zip_file = settings.TEMP_DIR / f"zip_{session.transfer_id}_{uuid.uuid4().hex[:8]}.tmp"
     files_to_delete = []
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        for f in session.files.values():
-            if f.final_filepath and os.path.exists(f.final_filepath):
-                # Archive name preserves relative path
-                zip_file.write(f.final_filepath, arcname=f.relative_path)
-                files_to_delete.append(f.final_filepath)
 
-    zip_buffer.seek(0)
-    zip_filename = f"{session.root_name}.zip" if session.is_folder else f"{session.transfer_id[:8]}_files.zip"
+    try:
+        with zipfile.ZipFile(temp_zip_file, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for f in session.files.values():
+                if f.final_filepath and os.path.exists(f.final_filepath) and is_safe_subpath(f.final_filepath, settings.RECEIVED_DIR):
+                    # Prevent Zip Slip: sanitize archive relative path
+                    clean_arc = f.relative_path.replace("\\", "/").lstrip("/")
+                    arc_parts = [sanitize_filename(p) for p in clean_arc.split("/") if p and p not in (".", "..")]
+                    safe_arcname = "/".join(arc_parts) if arc_parts else sanitize_filename(f.filename)
+                    zip_file.write(f.final_filepath, arcname=safe_arcname)
+                    files_to_delete.append(f.final_filepath)
+    except Exception as e:
+        if temp_zip_file.exists():
+            temp_zip_file.unlink(missing_ok=True)
+        logger.error(f"Error creating zip archive: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create zip archive")
 
-    if await should_auto_delete():
-        for fp in files_to_delete:
-            background_tasks.add_task(delete_file_safely, fp, settings.AUTO_DELETE_DELAY_SECONDS)
+    # Clean up temporary zip and ephemeral files after download
+    async def cleanup_zip_response(zip_path: Path, src_files: List[str]):
+        if await should_auto_delete():
+            for fp in src_files:
+                await delete_file_safely(fp, settings.AUTO_DELETE_DELAY_SECONDS)
+        try:
+            if zip_path.exists():
+                zip_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
-    return StreamingResponse(
-        zip_buffer,
-        media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{zip_filename}"'}
+    background_tasks.add_task(cleanup_zip_response, temp_zip_file, files_to_delete)
+
+    return FileResponse(
+        path=str(temp_zip_file),
+        filename=zip_filename,
+        media_type="application/zip"
     )

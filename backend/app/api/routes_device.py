@@ -135,13 +135,29 @@ async def update_settings(new_settings: Dict[str, Any]) -> Dict[str, Any]:
         await db.set_setting(k, v)
     return {"status": "ok"}
 
+def is_local_request(request: Request) -> bool:
+    """Verifies if request originates from localhost / local loopback."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    elif request.client:
+        client_ip = request.client.host
+    else:
+        client_ip = ""
+    return client_ip in ("127.0.0.1", "::1", "localhost", "testclient")
+
 @router.post("/shutdown")
-async def shutdown_server():
+async def shutdown_server(request: Request):
     """Cleanly exit the host server process when running in windowed/noconsole mode."""
     if is_cloud_env():
         raise HTTPException(
             status_code=403,
             detail="Server shutdown is disabled in cloud hosting environments."
+        )
+    if not is_local_request(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Server power actions are restricted to the local host machine."
         )
     import threading
     import time
@@ -152,12 +168,17 @@ async def shutdown_server():
     return {"status": "shutting_down", "message": "LANBridge server is shutting down..."}
 
 @router.post("/restart")
-async def restart_server():
+async def restart_server(request: Request):
     """Restart the host server process."""
     if is_cloud_env():
         raise HTTPException(
             status_code=403,
             detail="Server restart is managed automatically by your cloud platform."
+        )
+    if not is_local_request(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Server power actions are restricted to the local host machine."
         )
     import sys
     import subprocess
@@ -167,22 +188,14 @@ async def restart_server():
     def _do_restart():
         time.sleep(0.5)
         try:
+            creation_flags = 0x00000008 if os.name == "nt" else 0  # DETACHED_PROCESS
             if getattr(sys, "frozen", False):
                 exe_path = sys.executable
-                if os.name == "nt":
-                    cmd = f'timeout /t 1 /nobreak >nul & "{exe_path}"'
-                    subprocess.Popen(cmd, shell=True, close_fds=True)
-                else:
-                    subprocess.Popen([exe_path], close_fds=True)
+                subprocess.Popen([exe_path], creationflags=creation_flags, close_fds=True)
             else:
                 py_exe = sys.executable
                 args = [py_exe] + sys.argv
-                if os.name == "nt":
-                    quoted_args = " ".join(f'"{a}"' for a in sys.argv)
-                    cmd = f'timeout /t 1 /nobreak >nul & "{py_exe}" {quoted_args}'
-                    subprocess.Popen(cmd, shell=True, close_fds=True)
-                else:
-                    subprocess.Popen(args, close_fds=True)
+                subprocess.Popen(args, creationflags=creation_flags, close_fds=True)
         except Exception:
             pass
         finally:
