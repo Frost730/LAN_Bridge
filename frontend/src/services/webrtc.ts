@@ -1,6 +1,5 @@
 import { wsClient } from './websocket';
 import { SpeedCalculator } from '../utils/speed';
-import { encryptBuffer, decryptBuffer, importKey, exportKey } from '../utils/e2ee';
 
 export interface WebRTCProgressUpdate {
   transfer_id: string;
@@ -60,7 +59,6 @@ interface ReceivingFileEntry {
   total_chunks: number;
   speed_calc: SpeedCalculator;
   last_progress_time: number;
-  encryption_key?: CryptoKey;
 }
 
 class WebRTCManager {
@@ -331,14 +329,6 @@ class WebRTCManager {
     if (msg.type === 'file_start') {
       const key = `${msg.transfer_id}:${msg.file_id}`;
       const streamId = typeof msg.stream_id === 'number' ? msg.stream_id : this.getNextStreamId();
-      let encKey: CryptoKey | undefined = undefined;
-      if (msg.is_encrypted && msg.encryption_key) {
-        try {
-          encKey = await importKey(msg.encryption_key);
-        } catch (e) {
-          console.warn('[WebRTC E2EE] Error importing transfer encryption key:', e);
-        }
-      }
       const entry: ReceivingFileEntry = {
         transfer_id: msg.transfer_id,
         file_id: msg.file_id,
@@ -353,7 +343,6 @@ class WebRTCManager {
         total_chunks: msg.total_chunks,
         speed_calc: new SpeedCalculator(2.5),
         last_progress_time: 0,
-        encryption_key: encKey,
       };
       this.receivingFiles.set(key, entry);
       this.receivingStreams.set(streamId, entry);
@@ -367,25 +356,8 @@ class WebRTCManager {
 
       // Verify and assemble all received chunks in correct order
       const validChunks = fileData.chunks.filter((c): c is ArrayBuffer => !!c);
-      let decryptedChunks: ArrayBuffer[] = [];
+      const blob = new Blob(validChunks);
       let verified = true;
-
-      if (fileData.encryption_key) {
-        try {
-          for (const c of validChunks) {
-            const dec = await decryptBuffer(c, fileData.encryption_key);
-            decryptedChunks.push(dec);
-          }
-        } catch (err) {
-          console.error('[WebRTC E2EE] Decryption / auth failure:', err);
-          verified = false;
-          decryptedChunks = validChunks;
-        }
-      } else {
-        decryptedChunks = validChunks;
-      }
-
-      const blob = new Blob(decryptedChunks);
 
       // Verify SHA-256 for files up to 200MB (avoids V8 RangeError when buffer exceeds 2GB)
       if (fileData.sha256_expected && window.crypto && window.crypto.subtle) {
@@ -493,21 +465,11 @@ class WebRTCManager {
     sha256: string,
     chunkSize = 64 * 1024, // 64KB optimal chunk for WebRTC DataChannel
     onProgress?: (bytesSent: number, total: number) => void,
-    ctrlCheck?: () => { paused: boolean; cancelled: boolean },
-    encryptionKey?: CryptoKey
+    ctrlCheck?: () => { paused: boolean; cancelled: boolean }
   ): Promise<void> {
     const totalSize = file.size;
     const totalChunks = Math.max(1, Math.ceil(totalSize / chunkSize));
     const streamId = this.getNextStreamId();
-
-    let base64Key: string | undefined = undefined;
-    if (encryptionKey) {
-      try {
-        base64Key = await exportKey(encryptionKey);
-      } catch (err) {
-        console.warn('[WebRTC E2EE] Error exporting encryption key:', err);
-      }
-    }
 
     // 1. Send file start metadata with stream_id
     channel.send(
@@ -521,8 +483,6 @@ class WebRTCManager {
         size: totalSize,
         sha256: sha256,
         total_chunks: totalChunks,
-        is_encrypted: !!encryptionKey,
-        encryption_key: base64Key,
       })
     );
 
@@ -575,18 +535,13 @@ class WebRTCManager {
       // Flow control wait if channel buffer is full
       await waitForBufferDrain();
 
-      let chunkDataToSend: ArrayBuffer = chunkBuffer;
-      if (encryptionKey) {
-        chunkDataToSend = await encryptBuffer(chunkBuffer, encryptionKey);
-      }
-
       // Construct packet: 12-byte header [streamId (4)][chunk_idx (4)][offset (4)] + chunk data
-      const packet = new Uint8Array(12 + chunkDataToSend.byteLength);
+      const packet = new Uint8Array(12 + chunkBuffer.byteLength);
       const view = new DataView(packet.buffer);
       view.setUint32(0, streamId);
       view.setUint32(4, i);
       view.setUint32(8, offset);
-      packet.set(new Uint8Array(chunkDataToSend), 12);
+      packet.set(new Uint8Array(chunkBuffer), 12);
 
       channel.send(packet.buffer);
 

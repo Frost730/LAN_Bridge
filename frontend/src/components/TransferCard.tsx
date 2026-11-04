@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   File,
   Folder,
@@ -12,11 +12,9 @@ import {
   ShieldCheck,
   RotateCcw,
   Trash2,
-  Lock,
 } from 'lucide-react';
 import { TransferItem } from '../types';
 import { formatBytes, formatSpeed, formatETA } from '../utils/formatters';
-import { importKey, decryptBlob } from '../utils/e2ee';
 
 interface TransferCardProps {
   transfer: TransferItem;
@@ -40,48 +38,6 @@ export const TransferCard: React.FC<TransferCardProps> = React.memo(({
   const isTransferring = transfer.status === 'transferring';
   const isVerifying = transfer.status === 'verifying';
   const isWaiting = transfer.status === 'waiting_for_acceptance' || transfer.status === 'queued';
-  const [isDecrypting, setIsDecrypting] = useState(false);
-
-  const handleDownloadClick = async (e: React.MouseEvent) => {
-    if (!transfer.is_encrypted || !transfer.encryption_key) {
-      return;
-    }
-    e.preventDefault();
-    setIsDecrypting(true);
-    try {
-      const url =
-        transfer.is_folder || (transfer.files && transfer.files.length > 1)
-          ? `/api/transfers/${transfer.transfer_id}/download-zip`
-          : transfer.files?.[0]?.file_id
-          ? `/api/transfers/${transfer.transfer_id}/files/${transfer.files[0].file_id}/download`
-          : `/api/transfers/${transfer.transfer_id}/download`;
-
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const encryptedBlob = await res.blob();
-      const cryptoKey = await importKey(transfer.encryption_key);
-      const mime = transfer.is_folder ? 'application/zip' : 'application/octet-stream';
-      const decryptedBlob = await decryptBlob(encryptedBlob, cryptoKey, mime);
-
-      const blobUrl = URL.createObjectURL(decryptedBlob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      const downloadName =
-        transfer.is_folder || (transfer.files && transfer.files.length > 1)
-          ? `${transfer.root_name || 'archive'}.zip`
-          : transfer.files?.[0]?.filename || transfer.root_name || 'file';
-      a.download = downloadName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-    } catch (err) {
-      console.error('[E2EE Download] Failed to decrypt file:', err);
-      alert('End-to-End decryption failed: file data could not be verified with the encryption key.');
-    } finally {
-      setIsDecrypting(false);
-    }
-  };
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all">
@@ -121,15 +77,6 @@ export const TransferCard: React.FC<TransferCardProps> = React.memo(({
                     ))
                     ? 'HTTP Relay 🌐'
                     : 'HTTP LAN 🚀'}
-                </span>
-              )}
-              {transfer.is_encrypted && (
-                <span
-                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0"
-                  title="Protected with zero-knowledge AES-256-GCM End-to-End Encryption"
-                >
-                  <Lock className="w-2.5 h-2.5 mr-0.5 text-emerald-600 dark:text-emerald-400" />
-                  E2EE
                 </span>
               )}
             </div>
@@ -189,11 +136,10 @@ export const TransferCard: React.FC<TransferCardProps> = React.memo(({
                   : `/api/transfers/${transfer.transfer_id}/download`
               }
               download
-              onClick={handleDownloadClick}
               className="flex items-center space-x-1 px-3 py-1.5 min-h-[36px] rounded-lg bg-brand-50 hover:bg-brand-100 dark:bg-brand-950/60 dark:hover:bg-brand-900/60 text-brand-600 dark:text-brand-400 text-xs font-semibold transition-colors"
             >
-              <Download className={`w-3.5 h-3.5 ${isDecrypting ? 'animate-bounce' : ''}`} />
-              <span>{isDecrypting ? 'Decrypting...' : 'Save'}</span>
+              <Download className="w-3.5 h-3.5" />
+              <span>Save</span>
             </a>
           )}
 
