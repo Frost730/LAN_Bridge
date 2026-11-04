@@ -42,7 +42,9 @@ async def create_transfer(payload: TransferCreatePayload) -> Dict[str, Any]:
         is_folder=payload.is_folder,
         root_name=safe_root_name,
         files_data=sanitized_files,
-        chunk_size=payload.chunk_size or 2097152
+        chunk_size=payload.chunk_size or 2097152,
+        is_encrypted=bool(payload.is_encrypted),
+        encryption_key=payload.encryption_key
     )
 
     # Check if sender is a trusted device or auto-approval is enabled

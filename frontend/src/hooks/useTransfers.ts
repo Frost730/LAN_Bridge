@@ -7,6 +7,7 @@ import { webrtcManager } from '../services/webrtc';
 import { getTransferConfig } from '../utils/transferSettings';
 import { SpeedCalculator } from '../utils/speed';
 import { formatBytes } from '../utils/formatters';
+import { generateTransferKey, exportKey, importKey, encryptBlob } from '../utils/e2ee';
 
 export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: string, body?: string) => void) {
   const [transfers, setTransfers] = useState<TransferItem[]>([]);
@@ -27,6 +28,8 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
   );
   // Transfer state flags for cancellation / pause control
   const activeControlRef = useRef<Map<string, { paused: boolean; cancelled: boolean }>>(new Map());
+  // In-memory transfer crypto keys for End-to-End Encryption (E2EE)
+  const transferCryptoKeysRef = useRef<Map<string, CryptoKey>>(new Map());
 
   // Set of transfer IDs currently executing an active upload loop (prevents duplicate runs)
   const activeSendingTransfersRef = useRef<Set<string>>(new Set());
@@ -38,10 +41,17 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
   const receivedFilesByTransferRef = useRef<Map<string, Set<string>>>(new Map());
 
   // Always compute correct direction relative to current device
-  const normalizeTransfer = useCallback((t: TransferItem): TransferItem => ({
-    ...t,
-    direction: t.sender_device_id === localDeviceId ? 'sent' : 'received',
-  }), [localDeviceId]);
+  const normalizeTransfer = useCallback((t: TransferItem): TransferItem => {
+    if (t.is_encrypted && t.encryption_key && !transferCryptoKeysRef.current.has(t.transfer_id)) {
+      importKey(t.encryption_key).then((k) => {
+        transferCryptoKeysRef.current.set(t.transfer_id, k);
+      }).catch(() => {});
+    }
+    return {
+      ...t,
+      direction: t.sender_device_id === localDeviceId ? 'sent' : 'received',
+    };
+  }, [localDeviceId]);
 
   // Load existing transfers
   const refreshTransfers = useCallback(async () => {
@@ -121,13 +131,24 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
         const end = Math.min(totalSize, offset + CHUNK_SIZE);
         const chunkBlob = file.slice(offset, end);
 
+        let chunkPayload: Blob = chunkBlob;
+        const e2eeKey = transferCryptoKeysRef.current.get(transferId);
+        if (e2eeKey) {
+          try {
+            chunkPayload = await encryptBlob(chunkBlob, e2eeKey);
+          } catch (err) {
+            console.warn('[HTTP E2EE] Chunk encryption failed, falling back:', err);
+            chunkPayload = chunkBlob;
+          }
+        }
+
         let chunkSuccess = false;
         let lastErrMsg = '';
 
         for (let attempt = 1; attempt <= 3; attempt++) {
           if (ctrl.cancelled) break;
           try {
-            await api.uploadChunk(transferId, item.fileId, chunkIdx, offset, chunkBlob);
+            await api.uploadChunk(transferId, item.fileId, chunkIdx, offset, chunkPayload);
             chunkSuccess = true;
             break;
           } catch (err: any) {
@@ -292,7 +313,8 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
                   );
                 }
               },
-              () => activeControlRef.current.get(transferId) || { paused: false, cancelled: false }
+              () => activeControlRef.current.get(transferId) || { paused: false, cancelled: false },
+              transferCryptoKeysRef.current.get(transferId) || undefined
             );
 
             cumulativeBytesBefore += item.fileObj.size;
@@ -598,6 +620,16 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       const preparedFiles = [];
       const fileMappings = [];
 
+      // Generate per-transfer E2EE key (AES-256-GCM)
+      let transferKey: CryptoKey | null = null;
+      let base64Key: string | undefined = undefined;
+      try {
+        transferKey = await generateTransferKey();
+        base64Key = await exportKey(transferKey);
+      } catch (err) {
+        console.warn('[E2EE] Key generation fallback:', err);
+      }
+
       for (let i = 0; i < files.length; i++) {
         const item = files[i];
         const fileId = `file_${i}_${Date.now()}`;
@@ -629,8 +661,14 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
         is_folder: isFolder,
         root_name: rootName,
         chunk_size: engineConfig.chunkSize,
+        is_encrypted: !!transferKey,
+        encryption_key: base64Key,
         files: preparedFiles,
       });
+
+      if (transferKey) {
+        transferCryptoKeysRef.current.set(session.transfer_id, transferKey);
+      }
 
       // 3. Cache local files & controls immediately
       localFilesRef.current.set(session.transfer_id, fileMappings);

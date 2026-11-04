@@ -108,6 +108,8 @@ export const api = {
     is_folder: boolean;
     root_name: string;
     chunk_size?: number;
+    is_encrypted?: boolean;
+    encryption_key?: string;
     files: Array<{
       file_id: string;
       filename: string;

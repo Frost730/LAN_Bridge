@@ -206,3 +206,36 @@ async def test_sha256_integrity_failure_detection(tmp_path, monkeypatch):
     success, err = await manager.write_chunk("test-tamper-1", "f_tamper", chunk_index=0, offset=0, data=data)
     assert success is False
     assert "Integrity check failed" in err
+
+@pytest.mark.asyncio
+async def test_encrypted_transfer_session(tmp_path, monkeypatch):
+    temp_dir = tmp_path / "temp"
+    received_dir = tmp_path / "received"
+    temp_dir.mkdir()
+    received_dir.mkdir()
+    monkeypatch.setattr(settings, "TEMP_DIR", temp_dir)
+    monkeypatch.setattr(settings, "RECEIVED_DIR", received_dir)
+
+    manager = TransferManager()
+    ciphertext = b"\x00" * 12 + b"ENCRYPTED_AES_GCM_PAYLOAD" + b"\xff" * 16
+
+    transfer = manager.create_transfer(
+        transfer_id="test-e2ee-1",
+        sender_device_id="sender-e2ee",
+        sender_name="Secure-Device",
+        receiver_device_id="receiver-e2ee",
+        receiver_name="Target-Device",
+        is_folder=False,
+        root_name="secret.docx",
+        files_data=[{
+            "file_id": "f_e2ee",
+            "filename": "secret.docx",
+            "relative_path": "secret.docx",
+            "size": len(ciphertext),
+            "sha256": None
+        }],
+        is_encrypted=True
+    )
+    assert transfer.is_encrypted is True
+    transfer_dict = transfer.to_dict()
+    assert transfer_dict["is_encrypted"] is True

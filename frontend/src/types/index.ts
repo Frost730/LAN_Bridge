@@ -56,6 +56,8 @@ export interface TransferItem {
   eta_seconds?: number | null;
   is_folder: boolean;
   root_name: string;
+  is_encrypted?: boolean;
+  encryption_key?: string;
   files: TransferFileStatus[];
   created_at: number;
   completed_at?: number | null;

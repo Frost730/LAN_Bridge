@@ -53,6 +53,8 @@ class TransferCreatePayload(BaseModel):
     root_name: str = Field(..., max_length=255)
     chunk_size: Optional[int] = Field(2097152, ge=65536, le=33554432)
     files: List[TransferFileMetadata] = Field(..., min_length=1, max_length=10000)
+    is_encrypted: Optional[bool] = False
+    encryption_key: Optional[str] = Field(None, max_length=512)
 
 class TransferFileStatus(BaseModel):
     file_id: str
@@ -80,6 +82,8 @@ class TransferDetailsResponse(BaseModel):
     is_folder: bool
     root_name: str
     files: List[TransferFileStatus]
+    is_encrypted: Optional[bool] = False
+    encryption_key: Optional[str] = None
     created_at: float
     completed_at: Optional[float] = None
     error_message: Optional[str] = None

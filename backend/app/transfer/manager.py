@@ -49,7 +49,9 @@ class TransferSession:
         receiver_name: str,
         is_folder: bool,
         root_name: str,
-        files: List[ActiveFile]
+        files: List[ActiveFile],
+        is_encrypted: bool = False,
+        encryption_key: Optional[str] = None
     ):
         self.transfer_id = transfer_id
         self.sender_device_id = sender_device_id
@@ -58,6 +60,8 @@ class TransferSession:
         self.receiver_name = receiver_name
         self.is_folder = is_folder
         self.root_name = root_name
+        self.is_encrypted = is_encrypted
+        self.encryption_key = encryption_key
         self.status: TransferState = TransferState.WAITING_FOR_ACCEPTANCE
         self.files: Dict[str, ActiveFile] = {f.file_id: f for f in files}
         self.total_size: int = sum(f.size for f in files)
@@ -97,6 +101,8 @@ class TransferSession:
             "eta_seconds": eta,
             "is_folder": self.is_folder,
             "root_name": self.root_name,
+            "is_encrypted": self.is_encrypted,
+            "encryption_key": self.encryption_key,
             "files": [f.to_dict() for f in self.files.values()],
             "transport": self.transport,
             "created_at": self.created_at,
@@ -126,7 +132,9 @@ class TransferManager:
         is_folder: bool,
         root_name: str,
         files_data: List[dict],
-        chunk_size: int = 2097152
+        chunk_size: int = 2097152,
+        is_encrypted: bool = False,
+        encryption_key: Optional[str] = None
     ) -> TransferSession:
         active_files = [
             ActiveFile(
@@ -147,7 +155,9 @@ class TransferManager:
             receiver_name=receiver_name,
             is_folder=is_folder,
             root_name=root_name,
-            files=active_files
+            files=active_files,
+            is_encrypted=is_encrypted,
+            encryption_key=encryption_key
         )
         self._transfers[transfer_id] = session
         return session

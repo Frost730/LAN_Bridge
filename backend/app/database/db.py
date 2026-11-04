@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS transfers (
     bytes_transferred INTEGER NOT NULL DEFAULT 0,
     is_folder INTEGER NOT NULL DEFAULT 0,
     root_name TEXT NOT NULL,
+    is_encrypted INTEGER NOT NULL DEFAULT 0,
     created_at REAL NOT NULL,
     completed_at REAL
 );
@@ -112,6 +113,10 @@ class Database:
                 pass
             try:
                 await db.execute("ALTER TABLE history ADD COLUMN receiver_device_id TEXT")
+            except Exception:
+                pass
+            try:
+                await db.execute("ALTER TABLE transfers ADD COLUMN is_encrypted INTEGER NOT NULL DEFAULT 0")
             except Exception:
                 pass
             # Remove any duplicate history entries from previous transfers
