@@ -147,6 +147,13 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
 
         for (let attempt = 1; attempt <= 3; attempt++) {
           if (ctrl.cancelled) break;
+
+          // While paused, wait before uploading or retrying
+          while (ctrl.paused && !ctrl.cancelled) {
+            await new Promise((r) => setTimeout(r, 200));
+          }
+          if (ctrl.cancelled) break;
+
           try {
             await api.uploadChunk(transferId, item.fileId, chunkIdx, offset, chunkPayload);
             chunkSuccess = true;
@@ -155,6 +162,17 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
             lastErrMsg = String(err?.message || '');
             console.warn(`Chunk ${chunkIdx} upload failed (attempt ${attempt}/3):`, lastErrMsg);
             if (ctrl.cancelled) break;
+
+            // If the failure was due to pause or if pause was requested while request was in-flight
+            if (ctrl.paused || lastErrMsg.toLowerCase().includes('paused')) {
+              while (ctrl.paused && !ctrl.cancelled) {
+                await new Promise((r) => setTimeout(r, 200));
+              }
+              if (ctrl.cancelled) break;
+              attempt = 0; // Reset retry budget so pause never exhausts retries
+              continue;
+            }
+
             if (
               lastErrMsg.includes('507') ||
               lastErrMsg.includes('storage full') ||
@@ -214,6 +232,8 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     if (!ctrl.cancelled && !hasUploadErrors) {
       try {
         await api.completeTransfer(transferId, 'http');
+        localFilesRef.current.delete(transferId);
+        activeControlRef.current.delete(transferId);
       } catch (e: any) {
         console.warn('[HTTP] Error completing transfer on backend:', e);
         setTransfers((prev) =>
@@ -341,6 +361,8 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
             api.completeTransfer(transferId, 'webrtc').catch((err) => {
               console.warn('[WebRTC] Error notifying completeTransfer from sender:', err);
             });
+            localFilesRef.current.delete(transferId);
+            activeControlRef.current.delete(transferId);
           }
           return;
         }
@@ -358,8 +380,13 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       }
     } finally {
       activeSendingTransfersRef.current.delete(transferId);
-      localFilesRef.current.delete(transferId);
-      activeControlRef.current.delete(transferId);
+      const ctrl = activeControlRef.current.get(transferId);
+      // Clean up files and controls ONLY if explicitly cancelled.
+      // NEVER delete localFilesRef when paused, so the transfer can be resumed at any time!
+      if (ctrl?.cancelled) {
+        localFilesRef.current.delete(transferId);
+        activeControlRef.current.delete(transferId);
+      }
     }
   }, [startChunkUpload]);
 
@@ -568,8 +595,21 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
 
     const unsubResumed = wsClient.on('transfer_resumed', (data) => {
       if (data.transfer) {
-        const ctrl = activeControlRef.current.get(data.transfer.transfer_id);
-        if (ctrl) ctrl.paused = false;
+        const transferId = data.transfer.transfer_id;
+        let ctrl = activeControlRef.current.get(transferId);
+        if (!ctrl) {
+          ctrl = { paused: false, cancelled: false };
+          activeControlRef.current.set(transferId, ctrl);
+        } else {
+          ctrl.paused = false;
+        }
+
+        // If this device is the sender and the transfer loop is not actively running, resume it
+        const files = localFilesRef.current.get(transferId);
+        if (files && !activeSendingTransfersRef.current.has(transferId)) {
+          executeTransferSendingRef.current(transferId, files);
+        }
+
         refreshTransfers();
       }
     });
@@ -745,24 +785,33 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
   };
 
   const resumeTransfer = async (transferId: string) => {
-    // 1. Unpause local control
-    const ctrl = activeControlRef.current.get(transferId);
-    if (ctrl) {
-      ctrl.paused = false;
-    }
-    // 2. Optimistic UI update
+    // 1. Optimistic UI update
     setTransfers((prev) =>
       prev.map((t) => (t.transfer_id === transferId ? { ...t, status: 'transferring' } : t))
     );
+
+    // 2. Notify backend first so session status is active before chunks are sent
     try {
       await api.resumeTransfer(transferId);
-      const files = localFilesRef.current.get(transferId);
-      if (files && !activeSendingTransfersRef.current.has(transferId)) {
-        startChunkUpload(transferId, files);
-      }
     } catch (e) {
-      console.error('Failed to resume transfer:', e);
+      console.warn('Backend resume transfer response:', e);
     }
+
+    // 3. Unpause local control flag
+    let ctrl = activeControlRef.current.get(transferId);
+    if (!ctrl) {
+      ctrl = { paused: false, cancelled: false };
+      activeControlRef.current.set(transferId, ctrl);
+    } else {
+      ctrl.paused = false;
+    }
+
+    // 4. Restart transfer streaming if not already running in background
+    const files = localFilesRef.current.get(transferId);
+    if (files && !activeSendingTransfersRef.current.has(transferId)) {
+      executeTransferSendingRef.current(transferId, files);
+    }
+
     refreshTransfers();
   };
 

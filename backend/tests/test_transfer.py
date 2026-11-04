@@ -239,3 +239,67 @@ async def test_encrypted_transfer_session(tmp_path, monkeypatch):
     assert transfer.is_encrypted is True
     transfer_dict = transfer.to_dict()
     assert transfer_dict["is_encrypted"] is True
+
+@pytest.mark.asyncio
+async def test_pause_and_resume_api(tmp_path, monkeypatch):
+    import httpx
+    from app.main import app
+    from app.transfer.manager import transfer_manager
+
+    temp_dir = tmp_path / "temp"
+    received_dir = tmp_path / "received"
+    temp_dir.mkdir()
+    received_dir.mkdir()
+    monkeypatch.setattr(settings, "TEMP_DIR", temp_dir)
+    monkeypatch.setattr(settings, "RECEIVED_DIR", received_dir)
+    monkeypatch.setattr(db, "db_path", tmp_path / "test_api.db")
+    await db.init_db()
+
+    payload = b"Hello pause and resume test" * 50
+    expected_hash = hashlib.sha256(payload).hexdigest()
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Create transfer
+        r_create = await client.post("/api/transfers", json={
+            "sender_device_id": "sender_dev",
+            "sender_name": "Laptop",
+            "receiver_device_id": "receiver_dev",
+            "is_folder": False,
+            "root_name": "pause_test.txt",
+            "files": [{
+                "file_id": "f_p1",
+                "filename": "pause_test.txt",
+                "relative_path": "pause_test.txt",
+                "size": len(payload),
+                "sha256": expected_hash
+            }]
+        })
+        assert r_create.status_code == 200
+        transfer_id = r_create.json()["transfer_id"]
+
+        # Accept transfer
+        r_accept = await client.post(f"/api/transfers/{transfer_id}/accept")
+        assert r_accept.status_code == 200
+
+        # Upload first chunk of 500 bytes
+        chunk1 = payload[:500]
+        r_c1 = await client.put(f"/api/transfers/{transfer_id}/files/f_p1/chunks?chunk_index=0&offset=0", content=chunk1)
+        assert r_c1.status_code == 200
+
+        # Pause transfer
+        r_pause = await client.post(f"/api/transfers/{transfer_id}/pause")
+        assert r_pause.status_code == 200
+        assert r_pause.json()["status"] == "paused"
+
+        # Resume transfer
+        r_resume = await client.post(f"/api/transfers/{transfer_id}/resume")
+        assert r_resume.status_code == 200
+        assert r_resume.json()["status"] == "transferring"
+
+        # Upload second chunk after resume
+        chunk2 = payload[500:]
+        r_c2 = await client.put(f"/api/transfers/{transfer_id}/files/f_p1/chunks?chunk_index=1&offset=500", content=chunk2)
+        assert r_c2.status_code == 200
+        assert r_c2.json()["file_completed"] is True
+        assert r_c2.json()["transfer_completed"] is True

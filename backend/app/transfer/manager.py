@@ -191,17 +191,23 @@ class TransferManager:
 
     def pause_transfer(self, transfer_id: str) -> bool:
         session = self.get_transfer(transfer_id)
-        if not session or session.status != TransferState.TRANSFERRING:
+        if not session:
+            return False
+        if session.status == TransferState.PAUSED:
+            return True
+        if session.status not in (TransferState.TRANSFERRING, TransferState.WAITING_FOR_ACCEPTANCE, TransferState.QUEUED):
             return False
         session.status = TransferState.PAUSED
         return True
 
     def resume_transfer(self, transfer_id: str) -> bool:
         session = self.get_transfer(transfer_id)
-        if not session or session.status != TransferState.PAUSED:
+        if not session:
             return False
-        session.status = TransferState.TRANSFERRING
-        return True
+        if session.status in (TransferState.PAUSED, TransferState.WAITING_FOR_ACCEPTANCE, TransferState.QUEUED, TransferState.TRANSFERRING):
+            session.status = TransferState.TRANSFERRING
+            return True
+        return False
 
     def cancel_transfer(self, transfer_id: str) -> bool:
         session = self.get_transfer(transfer_id)
@@ -315,6 +321,7 @@ class TransferManager:
 
         if session.status == TransferState.PAUSED:
             return False, "Transfer is paused"
+        # Reject writes only if explicitly cancelled, failed or already finished
         if session.status in (TransferState.CANCELLED, TransferState.FAILED, TransferState.COMPLETED):
             return False, f"Transfer is already {session.status.value}"
 
