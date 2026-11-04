@@ -3,6 +3,7 @@ import time
 import shutil
 import hashlib
 import logging
+import asyncio
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from collections import deque
@@ -240,6 +241,10 @@ class TransferManager:
         if not session:
             return False
 
+        if session.status == TransferState.COMPLETED:
+            # Transfer was already completed and verified
+            return True
+
         # For HTTP relay transfers, verify all files actually exist and completed successfully
         if transport == "http":
             for f in session.files.values():
@@ -389,35 +394,27 @@ class TransferManager:
 
         return True, None
 
-    async def _verify_and_finalize_file(self, session: TransferSession, file_obj: ActiveFile) -> Tuple[bool, Optional[str]]:
-        """
-        Verifies SHA-256 hash using streaming chunks of 1MB (low memory consumption)
-        and securely moves to destination with full path traversal protection.
-        """
-        file_obj.status = FileTransferState.VERIFYING
+    def _sync_verify_and_finalize(self, session: TransferSession, file_obj: ActiveFile) -> Tuple[bool, Optional[str]]:
         temp_path = Path(file_obj.temp_filepath)
-
         if not temp_path.exists():
-            file_obj.status = FileTransferState.FAILED
-            file_obj.error_message = "Temporary file missing"
-            return False, file_obj.error_message
+            return False, "Temporary file missing"
 
-        # Streaming SHA-256 calculation
-        hasher = hashlib.sha256()
-        with open(temp_path, "rb") as f:
-            while chunk := f.read(1024 * 1024):  # 1MB buffer
-                hasher.update(chunk)
-
-        calculated_hash = hasher.hexdigest().lower()
-        file_obj.sha256_actual = calculated_hash
-
+        # Streaming SHA-256 calculation if expected hash provided
         if file_obj.sha256_expected:
+            hasher = hashlib.sha256()
+            with open(temp_path, "rb") as f:
+                while chunk := f.read(1024 * 1024):  # 1MB buffer
+                    hasher.update(chunk)
+
+            calculated_hash = hasher.hexdigest().lower()
+            file_obj.sha256_actual = calculated_hash
+
             expected = file_obj.sha256_expected.lower().strip()
             if calculated_hash != expected:
-                file_obj.status = FileTransferState.FAILED
-                file_obj.error_message = f"Integrity check failed: expected {expected[:8]}..., got {calculated_hash[:8]}..."
-                logger.error(f"SHA-256 mismatch for {file_obj.filename}: {file_obj.error_message}")
-                return False, file_obj.error_message
+                logger.error(f"SHA-256 mismatch for {file_obj.filename}: expected {expected[:8]}..., got {calculated_hash[:8]}...")
+                return False, f"Integrity check failed: expected {expected[:8]}..., got {calculated_hash[:8]}..."
+        else:
+            file_obj.sha256_actual = ""
 
         # Determine target path safely with sanitization and traversal prevention
         try:
@@ -448,10 +445,20 @@ class TransferManager:
             return True, None
 
         except Exception as e:
-            file_obj.status = FileTransferState.FAILED
-            file_obj.error_message = f"Failed to save file: {str(e)}"
             logger.error(f"Error finalizing file {file_obj.filename}: {e}", exc_info=True)
-            return False, file_obj.error_message
+            return False, f"Failed to save file: {str(e)}"
+
+    async def _verify_and_finalize_file(self, session: TransferSession, file_obj: ActiveFile) -> Tuple[bool, Optional[str]]:
+        """
+        Verifies SHA-256 hash and securely moves to destination with full path traversal protection.
+        Offloads disk hashing and moving to a threadpool to keep the async event loop responsive.
+        """
+        file_obj.status = FileTransferState.VERIFYING
+        ok, err = await asyncio.to_thread(self._sync_verify_and_finalize, session, file_obj)
+        if not ok:
+            file_obj.status = FileTransferState.FAILED
+            file_obj.error_message = err
+        return ok, err
 
     def _finalize_empty_file(self, session: TransferSession, file_obj: ActiveFile) -> bool:
         """Immediately materializes and finalizes a 0-byte file into RECEIVED_DIR"""

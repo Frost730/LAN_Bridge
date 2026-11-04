@@ -37,6 +37,42 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
   // Set of file IDs received per transfer for WebRTC multi-file tracking
   const receivedFilesByTransferRef = useRef<Map<string, Set<string>>>(new Map());
 
+  // Set of transfer IDs that have already auto-downloaded on the receiver
+  const autoDownloadedTransfersRef = useRef<Set<string>>(new Set());
+
+  // Automatically trigger browser file download on receiver upon transfer completion
+  const triggerAutoDownload = useCallback((transfer: TransferItem) => {
+    if (!transfer || !transfer.transfer_id) return;
+    if (autoDownloadedTransfersRef.current.has(transfer.transfer_id)) return;
+    autoDownloadedTransfersRef.current.add(transfer.transfer_id);
+
+    try {
+      const downloadUrl =
+        transfer.is_folder || (transfer.files && transfer.files.length > 1)
+          ? `/api/transfers/${transfer.transfer_id}/download-zip`
+          : transfer.files?.[0]?.file_id
+          ? `/api/transfers/${transfer.transfer_id}/files/${transfer.files[0].file_id}/download`
+          : `/api/transfers/${transfer.transfer_id}/download`;
+
+      const safeName = transfer.root_name || transfer.files?.[0]?.filename || 'download';
+      const downloadFilename = transfer.is_folder && !safeName.endsWith('.zip') ? `${safeName}.zip` : safeName;
+
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = downloadFilename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {
+      console.warn('[AutoDownload] Failed to trigger auto-download:', e);
+    }
+  }, []);
+
+  const triggerAutoDownloadRef = useRef(triggerAutoDownload);
+  useEffect(() => {
+    triggerAutoDownloadRef.current = triggerAutoDownload;
+  }, [triggerAutoDownload]);
+
   // Always compute correct direction relative to current device
   const normalizeTransfer = useCallback((t: TransferItem): TransferItem => ({
     ...t,
@@ -210,6 +246,22 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     await Promise.all(workerPool);
 
     if (!ctrl.cancelled && !hasUploadErrors) {
+      // Optimistically update local state immediately so UI reaches 100% completed without waiting
+      setTransfers((prev) =>
+        prev.map((t) =>
+          t.transfer_id === transferId
+            ? {
+                ...t,
+                status: 'completed',
+                bytes_transferred: t.total_size > 0 ? t.total_size : t.bytes_transferred,
+                progress_percentage: 100,
+                speed_bps: 0,
+                eta_seconds: 0,
+              }
+            : t
+        )
+      );
+
       try {
         await api.completeTransfer(transferId, 'http');
         localFilesRef.current.delete(transferId);
@@ -491,18 +543,21 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       setTransfers((prev) =>
         prev.map((t) => {
           if (t.transfer_id === data.transfer_id) {
-            const speed = data.speed_bps || 0;
-            const remaining = Math.max(0, (t.total_size || 0) - data.bytes_transferred);
-            const eta = data.eta_seconds !== undefined && data.eta_seconds !== null
+            const isFinished = data.status === 'completed' || data.progress_percentage >= 100;
+            const speed = isFinished ? 0 : (data.speed_bps || 0);
+            const remaining = isFinished ? 0 : Math.max(0, (t.total_size || 0) - data.bytes_transferred);
+            const eta = isFinished
+              ? 0
+              : data.eta_seconds !== undefined && data.eta_seconds !== null
               ? data.eta_seconds
               : (speed > 1024 ? Math.round(remaining / speed) : null);
             return {
               ...t,
-              bytes_transferred: data.bytes_transferred,
-              progress_percentage: data.progress_percentage,
+              bytes_transferred: isFinished ? (t.total_size > 0 ? t.total_size : data.bytes_transferred) : data.bytes_transferred,
+              progress_percentage: isFinished ? 100 : data.progress_percentage,
               speed_bps: speed,
               eta_seconds: eta,
-              status: data.status,
+              status: isFinished ? 'completed' : data.status,
             };
           }
           return t;
@@ -548,8 +603,48 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     });
 
     const unsubCompleted = wsClient.on('transfer_completed', (data) => {
-      refreshTransfers();
       const tid = data.transfer_id || data.transfer?.transfer_id;
+      let completedItem: TransferItem | null = null;
+
+      if (data.transfer) {
+        completedItem = normalizeTransfer(data.transfer);
+        setTransfers((prev) => {
+          const exists = prev.some((t) => t.transfer_id === completedItem!.transfer_id);
+          if (!exists) return [completedItem!, ...prev];
+          return prev.map((t) =>
+            t.transfer_id === completedItem!.transfer_id
+              ? {
+                  ...t,
+                  ...completedItem!,
+                  status: 'completed',
+                  progress_percentage: 100,
+                  speed_bps: 0,
+                  eta_seconds: 0,
+                }
+              : t
+          );
+        });
+      } else if (tid) {
+        setTransfers((prev) =>
+          prev.map((t) =>
+            t.transfer_id === tid
+              ? { ...t, status: 'completed', progress_percentage: 100, speed_bps: 0, eta_seconds: 0 }
+              : t
+          )
+        );
+      }
+
+      // If this device is the receiver and transfer was delivered via HTTP relay, auto-trigger browser download!
+      if (
+        completedItem &&
+        completedItem.receiver_device_id === localDeviceId &&
+        completedItem.transport !== 'webrtc'
+      ) {
+        triggerAutoDownloadRef.current(completedItem);
+      }
+
+      refreshTransfers();
+
       if (tid && !completedNotifiedTransfersRef.current.has(tid)) {
         completedNotifiedTransfersRef.current.add(tid);
         if (onNotificationRef.current) {

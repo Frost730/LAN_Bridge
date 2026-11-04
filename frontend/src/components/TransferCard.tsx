@@ -127,20 +127,28 @@ export const TransferCard: React.FC<TransferCardProps> = React.memo(({
           )}
 
           {isCompleted && (
-            <a
-              href={
-                transfer.is_folder || (transfer.files && transfer.files.length > 1)
-                  ? `/api/transfers/${transfer.transfer_id}/download-zip`
-                  : transfer.files?.[0]?.file_id
-                  ? `/api/transfers/${transfer.transfer_id}/files/${transfer.files[0].file_id}/download`
-                  : `/api/transfers/${transfer.transfer_id}/download`
-              }
-              download
-              className="flex items-center space-x-1 px-3 py-1.5 min-h-[36px] rounded-lg bg-brand-50 hover:bg-brand-100 dark:bg-brand-950/60 dark:hover:bg-brand-900/60 text-brand-600 dark:text-brand-400 text-xs font-semibold transition-colors"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Save</span>
-            </a>
+            transfer.direction === 'sent' ? (
+              <span className="flex items-center space-x-1 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Sent</span>
+              </span>
+            ) : (
+              <a
+                href={
+                  transfer.is_folder || (transfer.files && transfer.files.length > 1)
+                    ? `/api/transfers/${transfer.transfer_id}/download-zip`
+                    : transfer.files?.[0]?.file_id
+                    ? `/api/transfers/${transfer.transfer_id}/files/${transfer.files[0].file_id}/download`
+                    : `/api/transfers/${transfer.transfer_id}/download`
+                }
+                download
+                className="flex items-center space-x-1 px-3 py-1.5 min-h-[36px] rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-400 text-xs font-semibold transition-colors border border-emerald-200 dark:border-emerald-800"
+                title="File saved to Downloads. Click to download again if needed."
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download Again</span>
+              </a>
+            )
           )}
 
           {onDelete && (
@@ -197,7 +205,7 @@ export const TransferCard: React.FC<TransferCardProps> = React.memo(({
           {isCompleted && (
             <span className="inline-flex items-center text-emerald-600 dark:text-emerald-400 font-medium">
               <CheckCircle2 className="w-3.5 h-3.5 mr-1 shrink-0" />
-              SHA-256 Verified ✓
+              {transfer.direction === 'sent' ? 'Delivered & Verified ✓' : 'Saved to Downloads ✓'}
             </span>
           )}
           {isVerifying && (
