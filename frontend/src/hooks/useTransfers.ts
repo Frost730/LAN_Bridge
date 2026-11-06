@@ -367,7 +367,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       const isLargeFile = overallTotalSize > 300 * 1024 * 1024;
       if (!isLargeFile && !webrtcManager.isWebRTCFailed(targetDeviceId)) {
         try {
-          const channel = await webrtcManager.connectToPeer(targetDeviceId, 2500);
+          const channel = await webrtcManager.connectToPeer(targetDeviceId, 5000);
           if (channel && channel.readyState === 'open') {
             const ctrl = activeControlRef.current.get(transferId) || { paused: false, cancelled: false };
             if (ctrl.cancelled) {
@@ -629,6 +629,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
               speed_bps: speed,
               eta_seconds: eta,
               status: isFinished ? 'completed' : data.status,
+              transport: data.transport || t.transport || 'http',
             };
           }
           return t;
@@ -915,7 +916,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
               clearInterval(pollTimer);
             }
           } catch {
-            clearInterval(pollTimer);
+            // Keep polling across temporary network glitches or brief fetch errors
           }
         }, 1000);
       }

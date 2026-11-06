@@ -173,7 +173,7 @@ export const api = {
     chunkIndex: number,
     offset: number,
     chunkBlob: Blob,
-    timeoutMs = 35000
+    timeoutMs = 60000
   ) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);

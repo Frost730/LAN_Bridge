@@ -365,9 +365,8 @@ class TransferManager:
             # Update speed metrics
             session.speed_calc.record(session.bytes_transferred)
 
-            # Check if this file has completed all bytes & chunks
-            total_chunks = max(1, (file_obj.size + file_obj.chunk_size - 1) // file_obj.chunk_size)
-            if file_obj.bytes_received >= file_obj.size and len(file_obj.chunks_received) >= total_chunks:
+            # Check if this file has completed all declared bytes
+            if file_obj.bytes_received >= file_obj.size:
                 verified, err = await self._verify_and_finalize_file(session, file_obj)
                 if not verified:
                     return False, err

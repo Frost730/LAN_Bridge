@@ -9,6 +9,7 @@ class WebSocketClient {
   private pingInterval: any = null;
   private deviceInfo: DeviceInfo | null = null;
   private currentRoom: string | null = null;
+  private messageQueue: string[] = [];
   public isConnected: boolean = false;
 
   public setInitialRoom(room: string | null): void {
@@ -51,6 +52,18 @@ class WebSocketClient {
         this.isConnected = true;
         this.emit('connection_changed', { connected: true });
         this.startHeartbeat();
+
+        // Flush any messages queued while connection was establishing
+        while (this.messageQueue.length > 0) {
+          const item = this.messageQueue.shift();
+          if (item && this.ws && this.ws.readyState === WebSocket.OPEN) {
+            try {
+              this.ws.send(item);
+            } catch (err) {
+              console.warn('[WebSocket] Error sending queued message:', err);
+            }
+          }
+        }
       };
 
       this.ws.onmessage = (event) => {
@@ -143,8 +156,14 @@ class WebSocketClient {
   }
 
   public send(data: any): boolean {
+    const str = typeof data === 'string' ? data : JSON.stringify(data);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(typeof data === 'string' ? data : JSON.stringify(data));
+      this.ws.send(str);
+      return true;
+    }
+    // If socket is connecting or temporarily reconnecting, queue message so signaling is never dropped
+    if (!this.ws || this.ws.readyState === WebSocket.CONNECTING) {
+      this.messageQueue.push(str);
       return true;
     }
     return false;

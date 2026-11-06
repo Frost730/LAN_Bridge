@@ -177,7 +177,6 @@ class WebRTCManager {
 
     const pc = new RTCPeerConnection({
       iceServers: this.iceServers,
-      iceCandidatePoolSize: 10,
     });
 
     pc.onicecandidate = (event) => {
@@ -232,7 +231,7 @@ class WebRTCManager {
   }
 
   // Sender establishes connection and opens data channel
-  public async connectToPeer(targetDeviceId: string, timeoutMs = 2500): Promise<RTCDataChannel> {
+  public async connectToPeer(targetDeviceId: string, timeoutMs = 5000): Promise<RTCDataChannel> {
     const existingChannel = this.dataChannels.get(targetDeviceId);
     if (existingChannel && existingChannel.readyState === 'open') {
       return existingChannel;
@@ -258,6 +257,12 @@ class WebRTCManager {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.markWebRTCFailed(targetDeviceId);
+        try {
+          channel.close();
+          pc.close();
+        } catch {}
+        this.dataChannels.delete(targetDeviceId);
+        this.peerConnections.delete(targetDeviceId);
         reject(new Error('WebRTC connection timed out (falling back to HTTP)'));
       }, timeoutMs);
 
@@ -278,6 +283,12 @@ class WebRTCManager {
       channel.onerror = (ev) => {
         clearTimeout(timer);
         this.markWebRTCFailed(targetDeviceId);
+        try {
+          channel.close();
+          pc.close();
+        } catch {}
+        this.dataChannels.delete(targetDeviceId);
+        this.peerConnections.delete(targetDeviceId);
         if (originalOnError) originalOnError.call(channel, ev);
         reject(new Error('WebRTC channel error'));
       };
