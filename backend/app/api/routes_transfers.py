@@ -54,11 +54,16 @@ async def create_transfer(payload: TransferCreatePayload) -> Dict[str, Any]:
 
     if is_trusted or not require_approval:
         transfer_manager.accept_transfer(transfer_id)
-        # Notify sender to start streaming immediately
-        await ws_manager.send_to_device(payload.sender_device_id, {
+        # Notify sender to start streaming immediately (direct + broadcast for multi-tab / reconnect reliability)
+        accept_event = {
             "type": "transfer_accepted",
-            "transfer_id": transfer_id
-        })
+            "transfer_id": transfer_id,
+            "sender_device_id": payload.sender_device_id,
+            "receiver_device_id": payload.receiver_device_id,
+            "transfer": session.to_dict()
+        }
+        await ws_manager.send_to_device(payload.sender_device_id, accept_event)
+        await ws_manager.broadcast(accept_event)
         await ws_manager.broadcast({
             "type": "transfer_created",
             "transfer": session.to_dict()
@@ -118,10 +123,15 @@ async def accept_transfer(transfer_id: str, trust_device: bool = Query(False)) -
         raise HTTPException(status_code=400, detail="Cannot accept transfer in current state")
 
     # Notify sender that transfer was accepted and it can start sending chunks
-    await ws_manager.send_to_device(session.sender_device_id, {
+    accept_event = {
         "type": "transfer_accepted",
-        "transfer_id": transfer_id
-    })
+        "transfer_id": transfer_id,
+        "sender_device_id": session.sender_device_id,
+        "receiver_device_id": session.receiver_device_id,
+        "transfer": session.to_dict()
+    }
+    await ws_manager.send_to_device(session.sender_device_id, accept_event)
+    await ws_manager.broadcast(accept_event)
     await ws_manager.broadcast({
         "type": "transfer_updated",
         "transfer": session.to_dict()

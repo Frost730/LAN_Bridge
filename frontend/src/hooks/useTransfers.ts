@@ -49,6 +49,20 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       const list = await api.getTransfers(localDeviceId);
       const sanitized = list.map((raw) => {
         const t = normalizeTransfer(raw);
+        // If this device was the sender and transfer is marked transferring,
+        // and local files are in memory but streaming is not running, kickstart it!
+        if (
+          t.status === 'transferring' &&
+          t.sender_device_id === localDeviceId &&
+          !activeSendingTransfersRef.current.has(t.transfer_id) &&
+          localFilesRef.current.has(t.transfer_id)
+        ) {
+          const files = localFilesRef.current.get(t.transfer_id);
+          if (files && files.length > 0) {
+            executeTransferSendingRef.current(t.transfer_id, files);
+          }
+        }
+
         // If this device was the sender and transfer is still marked transferring with 0 bytes,
         // but local files are no longer in RAM (e.g. after a page reload), mark it cancelled.
         if (
@@ -97,7 +111,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       let receivedChunks: Set<number> | null = null;
       try {
         const serverStatus = await api.getTransfer(transferId);
-        const serverFile = serverStatus.files.find((f) => f.file_id === item.fileId);
+        const serverFile = serverStatus?.files?.find((f) => f.file_id === item.fileId);
         if (serverFile && Array.isArray(serverFile.chunks_received) && serverFile.chunks_received.length > 0) {
           receivedChunks = new Set(serverFile.chunks_received);
           totalUploadedBytes += serverFile.bytes_received || 0;
@@ -610,6 +624,42 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       executeTransferSendingRef.current(transferId, files);
     });
 
+    const unsubUpdated = wsClient.on('transfer_updated', async (data) => {
+      if (data.transfer) {
+        const item = normalizeTransfer(data.transfer);
+        setTransfers((prev) => {
+          const exists = prev.some((t) => t.transfer_id === item.transfer_id);
+          return exists ? prev.map((t) => (t.transfer_id === item.transfer_id ? item : t)) : [item, ...prev];
+        });
+
+        // If this device is the sender and the transfer was just accepted / is transferring,
+        // and transmission is not yet running, start streaming now!
+        if (
+          item.sender_device_id === localDeviceId &&
+          item.status === 'transferring' &&
+          !activeSendingTransfersRef.current.has(item.transfer_id)
+        ) {
+          let files = localFilesRef.current.get(item.transfer_id);
+          if (!files) {
+            for (let attempt = 0; attempt < 20; attempt++) {
+              await new Promise((r) => setTimeout(r, 50));
+              files = localFilesRef.current.get(item.transfer_id);
+              if (files) break;
+            }
+          }
+          if (files && files.length > 0 && !activeSendingTransfersRef.current.has(item.transfer_id)) {
+            executeTransferSendingRef.current(item.transfer_id, files);
+          }
+        }
+      }
+    });
+
+    const unsubConn = wsClient.on('connection_changed', (data) => {
+      if (data?.connected) {
+        refreshTransfers();
+      }
+    });
+
     const unsubRejected = wsClient.on('transfer_rejected', (data) => {
       const transferId = data.transfer_id;
       activeSendingTransfersRef.current.delete(transferId);
@@ -723,6 +773,8 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       unsubRequested();
       unsubProgress();
       unsubAccepted();
+      unsubUpdated();
+      unsubConn();
       unsubRejected();
       unsubCompleted();
       unsubPaused();
@@ -802,6 +854,33 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       // start transmission immediately without waiting for websocket race
       if (session.status === 'transferring') {
         executeTransferSendingRef.current(session.transfer_id, fileMappings);
+      } else {
+        // If waiting for acceptance, start an active acceptance polling watchdog.
+        // Checks every 1s for up to 5 minutes so mobile senders never stall even if WebSockets drop/reconnect!
+        const tid = session.transfer_id;
+        let pollCount = 0;
+        const pollTimer = setInterval(async () => {
+          pollCount++;
+          const ctrl = activeControlRef.current.get(tid);
+          if (ctrl?.cancelled || activeSendingTransfersRef.current.has(tid) || pollCount > 300) {
+            clearInterval(pollTimer);
+            return;
+          }
+          try {
+            const current = await api.getTransfer(tid);
+            if (current.status === 'transferring') {
+              clearInterval(pollTimer);
+              const files = localFilesRef.current.get(tid);
+              if (files && files.length > 0 && !activeSendingTransfersRef.current.has(tid)) {
+                executeTransferSendingRef.current(tid, files);
+              }
+            } else if (current.status === 'cancelled' || current.status === 'completed' || current.status === 'failed') {
+              clearInterval(pollTimer);
+            }
+          } catch {
+            clearInterval(pollTimer);
+          }
+        }, 1000);
       }
 
       return normalizedSession;
