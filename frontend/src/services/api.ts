@@ -172,8 +172,8 @@ export const api = {
     fileId: string,
     chunkIndex: number,
     offset: number,
-    chunkBlob: Blob,
-    timeoutMs = 60000
+    chunkBlob: Blob | ArrayBuffer,
+    timeoutMs = 35000
   ) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);

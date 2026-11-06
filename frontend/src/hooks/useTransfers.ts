@@ -15,7 +15,7 @@ class GlobalUploadLimiter {
   private maxActive = 4;
   private waitQueue: Array<() => void> = [];
 
-  public async acquire(): Promise<() => void> {
+  public async acquire(timeoutMs = 25000): Promise<() => void> {
     if (this.active < this.maxActive) {
       this.active++;
       let released = false;
@@ -27,7 +27,10 @@ class GlobalUploadLimiter {
       };
     }
     return new Promise((resolve) => {
-      this.waitQueue.push(() => {
+      let resolved = false;
+      const callback = () => {
+        if (resolved) return;
+        resolved = true;
         this.active++;
         let released = false;
         resolve(() => {
@@ -36,6 +39,27 @@ class GlobalUploadLimiter {
             this.release();
           }
         });
+      };
+
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          const idx = this.waitQueue.indexOf(callback);
+          if (idx !== -1) this.waitQueue.splice(idx, 1);
+          // Safety fallback: allow request through on timeout
+          let released = false;
+          resolve(() => {
+            if (!released) {
+              released = true;
+              this.release();
+            }
+          });
+        }
+      }, timeoutMs);
+
+      this.waitQueue.push(() => {
+        clearTimeout(timer);
+        callback();
       });
     });
   }
@@ -197,8 +221,12 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
         return;
       }
 
-      // Concurrency: 3 in-flight chunks for single-file transfers; 2 for multi-file transfers
-      const CHUNK_CONCURRENCY = Math.max(1, Math.min(files.length === 1 ? 3 : 2, pendingIndices.length));
+      // Platform-adaptive chunk concurrency: 2 in-flight chunks on mobile (1 for multi-file), 3 on desktop
+      const isMobile = engineConfig.isMobile;
+      const CHUNK_CONCURRENCY = Math.max(
+        1,
+        Math.min(isMobile ? (files.length === 1 ? 2 : 1) : (files.length === 1 ? 3 : 2), pendingIndices.length)
+      );
       let nextChunkIdxPtr = 0;
 
       const chunkWorker = async () => {
@@ -208,8 +236,17 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
 
           const offset = chunkIdx * CHUNK_SIZE;
           const end = Math.min(totalSize, offset + CHUNK_SIZE);
-          const chunkBlob = file.slice(offset, end);
-          const chunkPayload: Blob = chunkBlob;
+
+          // Eagerly read slice into in-memory ArrayBuffer.
+          // This avoids Android ContentResolver / Storage Access Framework stream locks when passing sliced Blobs to fetch()
+          let chunkPayload: ArrayBuffer;
+          try {
+            chunkPayload = await file.slice(offset, end).arrayBuffer();
+          } catch (readErr) {
+            console.error(`[Upload] Failed to read slice for chunk ${chunkIdx}:`, readErr);
+            hasUploadErrors = true;
+            break;
+          }
 
           let chunkSuccess = false;
           let lastErrMsg = '';
@@ -246,7 +283,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
               }
               await api.uploadChunk(transferId, item.fileId, chunkIdx, offset, chunkPayload);
               chunkSuccess = true;
-              totalUploadedBytes += chunkPayload.size;
+              totalUploadedBytes += chunkPayload.byteLength;
 
               // Live progress & speed update on sender side
               const now = Date.now();
@@ -444,93 +481,94 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
               return;
             }
 
-            webrtcSuccess = true;
             setTransfers((prev) =>
               prev.map((t) => (t.transfer_id === transferId ? { ...t, transport: 'webrtc', status: 'transferring' } : t))
             );
 
-          const engineConfig = getTransferConfig();
-          const webrtcChunkSize = engineConfig.performanceMode ? 128 * 1024 : 64 * 1024;
-          let lastProgressTime = 0;
-          const senderSpeedCalc = new SpeedCalculator(2.5);
-          const overallTotalSize = files.reduce((acc, f) => acc + f.fileObj.size, 0);
-          let cumulativeBytesBefore = 0;
+            const engineConfig = getTransferConfig();
+            const webrtcChunkSize = engineConfig.performanceMode ? 128 * 1024 : 64 * 1024;
+            let lastProgressTime = 0;
+            const senderSpeedCalc = new SpeedCalculator(2.5);
+            const overallTotalSize = files.reduce((acc, f) => acc + f.fileObj.size, 0);
+            let cumulativeBytesBefore = 0;
 
-          for (const item of files) {
-            if (ctrl.cancelled) break;
+            for (const item of files) {
+              if (ctrl.cancelled) break;
 
-            await webrtcManager.sendFileOverDataChannel(
-              channel,
-              transferId,
-              item.fileId,
-              item.fileObj,
-              item.relativePath,
-              item.sha256 || '',
-              webrtcChunkSize,
-              (sentInFile) => {
-                const now = Date.now();
-                const totalSent = cumulativeBytesBefore + sentInFile;
-                senderSpeedCalc.record(totalSent, now);
-                const pct = Math.min(100, Math.round((totalSent / overallTotalSize) * 100));
+              await webrtcManager.sendFileOverDataChannel(
+                channel,
+                transferId,
+                item.fileId,
+                item.fileObj,
+                item.relativePath,
+                item.sha256 || '',
+                webrtcChunkSize,
+                (sentInFile) => {
+                  const now = Date.now();
+                  const totalSent = cumulativeBytesBefore + sentInFile;
+                  senderSpeedCalc.record(totalSent, now);
+                  const pct = Math.min(100, Math.round((totalSent / overallTotalSize) * 100));
 
-                if (pct === 100 || !engineConfig.performanceMode || now - lastProgressTime > 100) {
-                  lastProgressTime = now;
-                  const speed = Math.round(senderSpeedCalc.getSpeed());
-                  const eta = senderSpeedCalc.getETA(overallTotalSize, totalSent);
+                  if (pct === 100 || !engineConfig.performanceMode || now - lastProgressTime > 100) {
+                    lastProgressTime = now;
+                    const speed = Math.round(senderSpeedCalc.getSpeed());
+                    const eta = senderSpeedCalc.getETA(overallTotalSize, totalSent);
 
-                  setTransfers((prev) =>
-                    prev.map((t) =>
-                      t.transfer_id === transferId
-                        ? {
-                            ...t,
-                            bytes_transferred: totalSent,
-                            progress_percentage: pct,
-                            speed_bps: speed,
-                            eta_seconds: pct === 100 ? 0 : eta,
-                            status: pct === 100 ? 'completed' : 'transferring',
-                            transport: 'webrtc',
-                          }
-                        : t
-                    )
-                  );
-                }
-              },
-              () => activeControlRef.current.get(transferId) || { paused: false, cancelled: false }
-            );
+                    setTransfers((prev) =>
+                      prev.map((t) =>
+                        t.transfer_id === transferId
+                          ? {
+                              ...t,
+                              bytes_transferred: totalSent,
+                              progress_percentage: pct,
+                              speed_bps: speed,
+                              eta_seconds: pct === 100 ? 0 : eta,
+                              status: pct === 100 ? 'completed' : 'transferring',
+                              transport: 'webrtc',
+                            }
+                          : t
+                      )
+                    );
+                  }
+                },
+                () => activeControlRef.current.get(transferId) || { paused: false, cancelled: false }
+              );
 
-            cumulativeBytesBefore += item.fileObj.size;
+              cumulativeBytesBefore += item.fileObj.size;
+            }
+
+            if (!ctrl.cancelled) {
+              webrtcSuccess = true;
+              setTransfers((prev) =>
+                prev.map((t) =>
+                  t.transfer_id === transferId
+                    ? {
+                        ...t,
+                        bytes_transferred: overallTotalSize,
+                        progress_percentage: 100,
+                        speed_bps: 0,
+                        eta_seconds: 0,
+                        status: 'completed',
+                        transport: 'webrtc',
+                      }
+                    : t
+                )
+              );
+
+              // Notify backend of sender completion
+              api.completeTransfer(transferId, 'webrtc').catch((err) => {
+                console.warn('[WebRTC] Error notifying completeTransfer from sender:', err);
+              });
+              localFilesRef.current.delete(transferId);
+              activeControlRef.current.delete(transferId);
+              return;
+            }
           }
-
-          if (!ctrl.cancelled) {
-            setTransfers((prev) =>
-              prev.map((t) =>
-                t.transfer_id === transferId
-                  ? {
-                      ...t,
-                      bytes_transferred: overallTotalSize,
-                      progress_percentage: 100,
-                      speed_bps: 0,
-                      eta_seconds: 0,
-                      status: 'completed',
-                      transport: 'webrtc',
-                    }
-                  : t
-              )
-            );
-
-            // Notify backend of sender completion
-            api.completeTransfer(transferId, 'webrtc').catch((err) => {
-              console.warn('[WebRTC] Error notifying completeTransfer from sender:', err);
-            });
-            localFilesRef.current.delete(transferId);
-            activeControlRef.current.delete(transferId);
-          }
-          return;
+        } catch (err) {
+          console.warn('[Transport] WebRTC P2P skipped or failed during streaming, seamlessly using HTTP streaming:', err);
+          webrtcManager.markWebRTCFailed(targetDeviceId);
         }
-      } catch (err) {
-        console.log('[Transport] WebRTC P2P skipped or timed out, seamlessly using HTTP streaming');
       }
-    }
 
       // 2. Seamless Fallback: HTTP chunk streaming
       const ctrl = activeControlRef.current.get(transferId) || { paused: false, cancelled: false };

@@ -92,7 +92,7 @@ class TransferSession:
     def to_dict(self) -> dict:
         speed = self.speed_calc.get_speed()
         remaining_bytes = max(0, self.total_size - self.bytes_transferred)
-        eta = int(remaining_bytes / speed) if speed > 1024 else None
+        eta = max(1, int(remaining_bytes / speed)) if (speed > 1024 and remaining_bytes > 0) else (0 if remaining_bytes == 0 else None)
 
         return {
             "transfer_id": self.transfer_id,

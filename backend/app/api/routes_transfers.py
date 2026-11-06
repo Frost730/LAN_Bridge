@@ -311,7 +311,7 @@ async def upload_chunk(
 
     speed = session.speed_calc.get_speed() if session else 0.0
     remaining_bytes = max(0, session.total_size - session.bytes_transferred) if session else 0
-    eta = int(remaining_bytes / speed) if speed > 1024 else None
+    eta = max(1, int(remaining_bytes / speed)) if (speed > 1024 and remaining_bytes > 0) else (0 if remaining_bytes == 0 else None)
 
     # Throttled progress broadcast (at most once every 200ms or on completion) to eliminate event-loop congestion
     now = time.time()

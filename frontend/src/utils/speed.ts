@@ -44,7 +44,7 @@ export class SpeedCalculator {
     if (speed <= 1024) return null; // Below 1 KB/s or initial ramp up
     const remaining = Math.max(0, totalBytes - currentBytes);
     if (remaining === 0) return 0;
-    return Math.round(remaining / speed);
+    return Math.max(1, Math.round(remaining / speed));
   }
 
   /**

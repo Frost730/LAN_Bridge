@@ -526,9 +526,10 @@ class WebRTCManager {
     );
 
     let bytesSent = 0;
-    // High watermark (8MB) and low watermark (1MB) keeps SCTP socket saturated with zero stalling
-    const BUFFERED_AMOUNT_HIGH_THRESHOLD = 8 * 1024 * 1024;
-    const BUFFERED_AMOUNT_LOW_THRESHOLD = 1 * 1024 * 1024;
+    // Adapt backpressure thresholds to client platform (mobile devices have much lower SCTP send buffers, ~1MB max)
+    const isMobileDevice = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const BUFFERED_AMOUNT_HIGH_THRESHOLD = isMobileDevice ? 256 * 1024 : 1024 * 1024; // 256 KB mobile, 1 MB desktop
+    const BUFFERED_AMOUNT_LOW_THRESHOLD = isMobileDevice ? 64 * 1024 : 256 * 1024;    // 64 KB mobile, 256 KB desktop
 
     try {
       channel.bufferedAmountLowThreshold = BUFFERED_AMOUNT_LOW_THRESHOLD;
@@ -536,19 +537,27 @@ class WebRTCManager {
 
     // Zero-latency event-driven backpressure wait using WebRTC onbufferedamountlow
     const waitForBufferDrain = (): Promise<void> => {
+      if (channel.readyState !== 'open') {
+        return Promise.reject(new Error('WebRTC DataChannel is not open'));
+      }
       if (channel.bufferedAmount <= BUFFERED_AMOUNT_HIGH_THRESHOLD) {
         return Promise.resolve();
       }
 
-      return new Promise<void>((resolve) => {
+      return new Promise<void>((resolve, reject) => {
         let isResolved = false;
+        const startTime = Date.now();
 
         const cleanupAndResolve = () => {
           if (!isResolved) {
             isResolved = true;
             channel.removeEventListener('bufferedamountlow', onLow);
             if (fallbackTimer) clearTimeout(fallbackTimer);
-            resolve();
+            if (channel.readyState !== 'open') {
+              reject(new Error('WebRTC DataChannel closed while waiting for buffer drain'));
+            } else {
+              resolve();
+            }
           }
         };
 
@@ -564,13 +573,20 @@ class WebRTCManager {
             cleanupAndResolve();
           } else {
             const interval = setInterval(() => {
+              // Watchdog: If channel stalls for > 8s without draining, abort to allow HTTP fallback
+              if (Date.now() - startTime > 8000) {
+                clearInterval(interval);
+                channel.removeEventListener('bufferedamountlow', onLow);
+                reject(new Error('WebRTC DataChannel buffer drain timed out (socket stall)'));
+                return;
+              }
               if (channel.bufferedAmount <= BUFFERED_AMOUNT_LOW_THRESHOLD || channel.readyState !== 'open') {
                 clearInterval(interval);
                 cleanupAndResolve();
               }
-            }, 10);
+            }, 15);
           }
-        }, 80);
+        }, 50);
       });
     };
 
