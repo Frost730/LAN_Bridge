@@ -72,6 +72,66 @@ async def test_chunk_upload_and_sha256_verification(tmp_path, monkeypatch):
     assert final_file.read_bytes() == payload
 
 @pytest.mark.asyncio
+async def test_out_of_order_and_concurrent_chunks(tmp_path, monkeypatch):
+    """Verifies that chunks arriving out-of-order or concurrently do not corrupt or truncate files."""
+    temp_dir = tmp_path / "temp"
+    received_dir = tmp_path / "received"
+    temp_dir.mkdir()
+    received_dir.mkdir()
+    monkeypatch.setattr(settings, "TEMP_DIR", temp_dir)
+    monkeypatch.setattr(settings, "RECEIVED_DIR", received_dir)
+    monkeypatch.setattr(db, "db_path", tmp_path / "test_ooo.db")
+    await db.init_db()
+
+    manager = TransferManager()
+
+    payload = b"LANBridge Concurrent Chunk Test Pipelining Data! " * 1500  # ~73.5KB
+    expected_hash = hashlib.sha256(payload).hexdigest()
+
+    transfer = manager.create_transfer(
+        transfer_id="test-ooo-1",
+        sender_device_id="sender-ooo",
+        sender_name="Laptop",
+        receiver_device_id="receiver-ooo",
+        receiver_name="Desktop",
+        is_folder=False,
+        root_name="ooo_test.dat",
+        chunk_size=20000,
+        files_data=[{
+            "file_id": "file-ooo-1",
+            "filename": "ooo_test.dat",
+            "relative_path": "ooo_test.dat",
+            "size": len(payload),
+            "sha256": expected_hash
+        }]
+    )
+
+    assert manager.accept_transfer("test-ooo-1") is True
+
+    chunk_size = 20000
+    chunk_tuples = []
+    for idx, i in enumerate(range(0, len(payload), chunk_size)):
+        chunk_data = payload[i:i+chunk_size]
+        chunk_tuples.append((idx, i, chunk_data))
+
+    # Reverse order: write chunk 3, chunk 2, chunk 1, chunk 0
+    for idx, offset, data in reversed(chunk_tuples):
+        success, err = await manager.write_chunk(
+            transfer_id="test-ooo-1",
+            file_id="file-ooo-1",
+            chunk_index=idx,
+            offset=offset,
+            data=data
+        )
+        assert success is True
+        assert err is None
+
+    assert transfer.status == TransferState.COMPLETED
+    saved_file = received_dir / "ooo_test.dat"
+    assert saved_file.exists()
+    assert saved_file.read_bytes() == payload
+
+@pytest.mark.asyncio
 async def test_resume_interrupted_transfer(tmp_path, monkeypatch):
     temp_dir = tmp_path / "temp"
     received_dir = tmp_path / "received"

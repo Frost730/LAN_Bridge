@@ -72,6 +72,7 @@ class TransferSession:
         self.transport: str = "http"
         self.speed_calc = SpeedCalculator()
         self.history_recorded: bool = False
+        self.last_progress_broadcast: float = 0.0
 
     @property
     def bytes_transferred(self) -> int:
@@ -115,6 +116,7 @@ class TransferManager:
     def __init__(self):
         self._transfers: Dict[str, TransferSession] = {}
         self._transport = HTTPChunkTransport()
+        self._file_locks: Dict[str, asyncio.Lock] = {}
 
     def get_transfer(self, transfer_id: str) -> Optional[TransferSession]:
         return self._transfers.get(transfer_id)
@@ -342,22 +344,27 @@ class TransferManager:
             temp_path = settings.TEMP_DIR / f"{session.transfer_id}_{file_obj.file_id}.part"
             file_obj.temp_filepath = str(temp_path)
 
-        # Write chunk at offset
-        await self._transport.write_chunk(file_obj.temp_filepath, offset, data)
+        # Ensure per-file lock to serialize concurrent disk writes on Windows
+        lock = self._file_locks.setdefault(file_id, asyncio.Lock())
+        async with lock:
+            # Write chunk at offset
+            await self._transport.write_chunk(file_obj.temp_filepath, offset, data)
 
-        chunk_len = len(data)
-        if chunk_index not in file_obj.chunks_received:
-            file_obj.chunks_received.add(chunk_index)
-            file_obj.bytes_received += chunk_len
+            chunk_len = len(data)
+            if chunk_index not in file_obj.chunks_received:
+                file_obj.chunks_received.add(chunk_index)
+                file_obj.bytes_received += chunk_len
 
-        # Update speed metrics
-        session.speed_calc.record(session.bytes_transferred)
+            # Update speed metrics
+            session.speed_calc.record(session.bytes_transferred)
 
-        # Check if this file has completed all bytes
-        if file_obj.bytes_received >= file_obj.size:
-            verified, err = await self._verify_and_finalize_file(session, file_obj)
-            if not verified:
-                return False, err
+            # Check if this file has completed all bytes & chunks
+            total_chunks = max(1, (file_obj.size + file_obj.chunk_size - 1) // file_obj.chunk_size)
+            if file_obj.bytes_received >= file_obj.size and len(file_obj.chunks_received) >= total_chunks:
+                verified, err = await self._verify_and_finalize_file(session, file_obj)
+                if not verified:
+                    return False, err
+                self._file_locks.pop(file_id, None)
 
         # Check if entire transfer has completed
         all_completed = all(f.status == FileTransferState.COMPLETED for f in session.files.values())
@@ -498,8 +505,9 @@ class TransferManager:
             return False
 
     def cleanup_temp_files(self, session: TransferSession) -> None:
-        """Removes incomplete temporary files for cancelled transfers"""
+        """Removes incomplete temporary files and releases locks for transfers"""
         for f in session.files.values():
+            self._file_locks.pop(f.file_id, None)
             if f.temp_filepath and os.path.exists(f.temp_filepath):
                 try:
                     os.remove(f.temp_filepath)

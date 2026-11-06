@@ -1,21 +1,30 @@
 /**
- * Workaround for mobile/Android content providers where file.size can be 0 initially
- * until file descriptor is opened.
+ * Workaround for mobile/Android content providers (SAF) where file.size can be 0 initially.
+ * If file.size is 0, reads arrayBuffer from the underlying ContentResolver stream.
+ * If bytes exist, returns a synthesized File instance with correct size.
  */
-export async function getActualFileSize(file: File): Promise<number> {
-  if (file.size > 0) return file.size;
+export async function getResolvedFileAndSize(file: File): Promise<{ file: File; size: number }> {
+  if (file.size > 0) {
+    return { file, size: file.size };
+  }
   try {
-    const slice = file.slice(0, 1024);
-    const buf = await slice.arrayBuffer();
+    const buf = await file.arrayBuffer();
     if (buf && buf.byteLength > 0) {
-      // Sliced bytes exist; read full array buffer to determine real size
-      const full = await file.arrayBuffer();
-      return full ? full.byteLength : file.size;
+      const fixedFile = new File([buf], file.name, {
+        type: file.type || 'application/octet-stream',
+        lastModified: file.lastModified || Date.now(),
+      });
+      return { file: fixedFile, size: buf.byteLength };
     }
   } catch (err) {
     console.warn('[File] Error inspecting 0-byte file:', err);
   }
-  return file.size;
+  return { file, size: file.size };
+}
+
+export async function getActualFileSize(file: File): Promise<number> {
+  const res = await getResolvedFileAndSize(file);
+  return res.size;
 }
 
 /**

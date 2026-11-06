@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { TransferItem, DeviceInfo } from '../types';
 import { api } from '../services/api';
 import { wsClient } from '../services/websocket';
-import { calculateFileSHA256, getActualFileSize } from '../utils/hashing';
+import { calculateFileSHA256, getActualFileSize, getResolvedFileAndSize } from '../utils/hashing';
 import { webrtcManager, webrtcReceivedFiles } from '../services/webrtc';
 import { getTransferConfig } from '../utils/transferSettings';
 import { SpeedCalculator } from '../utils/speed';
@@ -85,9 +85,9 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     const senderSpeedCalc = new SpeedCalculator(2.5);
     let lastProgressTime = 0;
 
-    // Upload single file sequentially in chunks
+    // Upload single file with concurrent chunk pipelining
     const uploadSingleFile = async (item: { fileObj: File; fileId: string; relativePath: string }) => {
-      if (ctrl.cancelled) return;
+      if (ctrl.cancelled || hasUploadErrors) return;
 
       const file = item.fileObj;
       const totalSize = file.size;
@@ -108,154 +108,151 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
         // Fallback to sending all chunks
       }
 
-      for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
-        // Check cancellation
-        if (ctrl.cancelled) break;
+      // Collect pending chunk indices to send
+      const pendingIndices: number[] = [];
+      for (let idx = 0; idx < totalChunks; idx++) {
+        if (!receivedChunks || !receivedChunks.has(idx)) {
+          pendingIndices.push(idx);
+        }
+      }
 
-        // Check pause state: loop wait with periodic server poll
-        let pausePollCount = 0;
-        while (ctrl.paused && !ctrl.cancelled) {
-          await new Promise((r) => setTimeout(r, 250));
-          pausePollCount++;
-          if (pausePollCount % 8 === 0) {
+      if (pendingIndices.length === 0) {
+        return;
+      }
+
+      // Concurrency: 3 in-flight chunks for single-file transfers; 2 for multi-file transfers
+      const CHUNK_CONCURRENCY = Math.max(1, Math.min(files.length === 1 ? 3 : 2, pendingIndices.length));
+      let nextChunkIdxPtr = 0;
+
+      const chunkWorker = async () => {
+        while (nextChunkIdxPtr < pendingIndices.length && !ctrl.cancelled && !hasUploadErrors) {
+          const chunkIdx = pendingIndices[nextChunkIdxPtr++];
+          if (chunkIdx === undefined) break;
+
+          const offset = chunkIdx * CHUNK_SIZE;
+          const end = Math.min(totalSize, offset + CHUNK_SIZE);
+          const chunkBlob = file.slice(offset, end);
+          const chunkPayload: Blob = chunkBlob;
+
+          let chunkSuccess = false;
+          let lastErrMsg = '';
+          const maxAttempts = 6;
+
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            if (ctrl.cancelled || hasUploadErrors) break;
+
+            // Check pause state: loop wait with periodic server poll
+            let pausePollCount = 0;
+            while (ctrl.paused && !ctrl.cancelled) {
+              await new Promise((r) => setTimeout(r, 250));
+              pausePollCount++;
+              if (pausePollCount % 8 === 0) {
+                try {
+                  const status = await api.getTransfer(transferId);
+                  if (status.status === 'transferring') {
+                    ctrl.paused = false;
+                    break;
+                  } else if (status.status === 'cancelled') {
+                    ctrl.cancelled = true;
+                    break;
+                  }
+                } catch {}
+              }
+            }
+            if (ctrl.cancelled || hasUploadErrors) break;
+
             try {
-              const status = await api.getTransfer(transferId);
-              if (status.status === 'transferring') {
-                ctrl.paused = false;
-                break;
-              } else if (status.status === 'cancelled') {
+              await api.uploadChunk(transferId, item.fileId, chunkIdx, offset, chunkPayload);
+              chunkSuccess = true;
+              totalUploadedBytes += chunkPayload.size;
+
+              // Live progress & speed update on sender side
+              const now = Date.now();
+              senderSpeedCalc.record(totalUploadedBytes, now);
+              if (now - lastProgressTime > 120 || totalUploadedBytes >= totalTransferSize) {
+                lastProgressTime = now;
+                const speed = Math.round(senderSpeedCalc.getSpeed());
+                const eta = senderSpeedCalc.getETA(totalTransferSize, totalUploadedBytes);
+                const pct = totalTransferSize > 0
+                  ? Math.min(100, Math.round((totalUploadedBytes / totalTransferSize) * 100))
+                  : 100;
+
+                setTransfers((prev) =>
+                  prev.map((t) =>
+                    t.transfer_id === transferId
+                      ? {
+                          ...t,
+                          bytes_transferred: totalUploadedBytes,
+                          progress_percentage: pct,
+                          speed_bps: speed,
+                          eta_seconds: pct === 100 ? 0 : eta,
+                          status: pct === 100 ? 'completed' : 'transferring',
+                          transport: 'http',
+                        }
+                      : t
+                  )
+                );
+              }
+              break;
+            } catch (err: any) {
+              lastErrMsg = String(err?.message || '');
+              console.warn(`Chunk ${chunkIdx} upload failed (attempt ${attempt}/${maxAttempts}):`, lastErrMsg);
+              if (ctrl.cancelled) break;
+
+              if (ctrl.paused || lastErrMsg.toLowerCase().includes('paused')) {
+                while (ctrl.paused && !ctrl.cancelled) {
+                  await new Promise((r) => setTimeout(r, 250));
+                }
+                if (ctrl.cancelled) break;
+                attempt = 0;
+                continue;
+              }
+
+              if (
+                lastErrMsg.includes('507') ||
+                lastErrMsg.includes('storage full') ||
+                lastErrMsg.includes('disk full') ||
+                lastErrMsg.includes('No space')
+              ) {
                 ctrl.cancelled = true;
                 break;
               }
-            } catch {}
-          }
-        }
-        if (ctrl.cancelled) break;
-
-        // If this chunk was ALREADY received on the server, skip it!
-        if (receivedChunks && receivedChunks.has(chunkIdx)) {
-          continue;
-        }
-
-        const offset = chunkIdx * CHUNK_SIZE;
-        const end = Math.min(totalSize, offset + CHUNK_SIZE);
-        const chunkBlob = file.slice(offset, end);
-        const chunkPayload: Blob = chunkBlob;
-
-        let chunkSuccess = false;
-        let lastErrMsg = '';
-        const maxAttempts = 6;
-
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          if (ctrl.cancelled) break;
-
-          while (ctrl.paused && !ctrl.cancelled) {
-            await new Promise((r) => setTimeout(r, 250));
-            pausePollCount++;
-            if (pausePollCount % 8 === 0) {
-              try {
-                const status = await api.getTransfer(transferId);
-                if (status.status === 'transferring') {
-                  ctrl.paused = false;
-                  break;
-                } else if (status.status === 'cancelled') {
-                  ctrl.cancelled = true;
-                  break;
-                }
-              } catch {}
-            }
-          }
-          if (ctrl.cancelled) break;
-
-          try {
-            await api.uploadChunk(transferId, item.fileId, chunkIdx, offset, chunkPayload);
-            chunkSuccess = true;
-            totalUploadedBytes += chunkPayload.size;
-
-            // Live progress & speed update on sender side
-            const now = Date.now();
-            senderSpeedCalc.record(totalUploadedBytes, now);
-            if (now - lastProgressTime > 150 || totalUploadedBytes >= totalTransferSize) {
-              lastProgressTime = now;
-              const speed = Math.round(senderSpeedCalc.getSpeed());
-              const eta = senderSpeedCalc.getETA(totalTransferSize, totalUploadedBytes);
-              const pct = totalTransferSize > 0
-                ? Math.min(100, Math.round((totalUploadedBytes / totalTransferSize) * 100))
-                : 100;
-
-              setTransfers((prev) =>
-                prev.map((t) =>
-                  t.transfer_id === transferId
-                    ? {
-                        ...t,
-                        bytes_transferred: totalUploadedBytes,
-                        progress_percentage: pct,
-                        speed_bps: speed,
-                        eta_seconds: pct === 100 ? 0 : eta,
-                        status: pct === 100 ? 'completed' : 'transferring',
-                        transport: 'http',
-                      }
-                    : t
-                )
-              );
-            }
-            break;
-          } catch (err: any) {
-            lastErrMsg = String(err?.message || '');
-            console.warn(`Chunk ${chunkIdx} upload failed (attempt ${attempt}/${maxAttempts}):`, lastErrMsg);
-            if (ctrl.cancelled) break;
-
-            if (ctrl.paused || lastErrMsg.toLowerCase().includes('paused')) {
-              while (ctrl.paused && !ctrl.cancelled) {
-                await new Promise((r) => setTimeout(r, 250));
+              if (attempt < maxAttempts) {
+                await new Promise((r) => setTimeout(r, Math.min(4000, 1000 * Math.pow(1.4, attempt - 1))));
               }
-              if (ctrl.cancelled) break;
-              attempt = 0;
-              continue;
             }
+          }
 
-            if (
+          if (!chunkSuccess && !ctrl.cancelled && !hasUploadErrors) {
+            hasUploadErrors = true;
+            // Auto-pause rather than permanently deleting the transfer!
+            ctrl.paused = true;
+            api.pauseTransfer(transferId).catch(() => {});
+            const failureMessage =
               lastErrMsg.includes('507') ||
               lastErrMsg.includes('storage full') ||
               lastErrMsg.includes('disk full') ||
               lastErrMsg.includes('No space')
-            ) {
-              ctrl.cancelled = true;
-              break;
-            }
-            if (attempt < maxAttempts) {
-              await new Promise((r) => setTimeout(r, Math.min(4000, 1000 * Math.pow(1.4, attempt - 1))));
-            }
+                ? 'Server storage limit reached on cloud container. For files > 500MB, use WebRTC or same Wi-Fi.'
+                : `Connection paused at chunk ${chunkIdx + 1}/${totalChunks} (${file.name}). Tap Play/Resume to continue.`;
+
+            setTransfers((prev) =>
+              prev.map((t) =>
+                t.transfer_id === transferId
+                  ? {
+                      ...t,
+                      status: 'paused',
+                      error_message: failureMessage,
+                    }
+                  : t
+              )
+            );
+            break;
           }
         }
+      };
 
-        if (!chunkSuccess) {
-          hasUploadErrors = true;
-          // Auto-pause rather than permanently deleting the transfer!
-          ctrl.paused = true;
-          api.pauseTransfer(transferId).catch(() => {});
-          const failureMessage =
-            lastErrMsg.includes('507') ||
-            lastErrMsg.includes('storage full') ||
-            lastErrMsg.includes('disk full') ||
-            lastErrMsg.includes('No space')
-              ? 'Server storage limit reached on cloud container. For files > 500MB, use WebRTC or same Wi-Fi.'
-              : `Connection paused at chunk ${chunkIdx + 1}/${totalChunks} (${file.name}). Tap Play/Resume to continue.`;
-
-          setTransfers((prev) =>
-            prev.map((t) =>
-              t.transfer_id === transferId
-                ? {
-                    ...t,
-                    status: 'paused',
-                    error_message: failureMessage,
-                  }
-                : t
-            )
-          );
-          break;
-        }
-      }
+      await Promise.all(Array.from({ length: CHUNK_CONCURRENCY }, () => chunkWorker()));
     };
 
     // Distribute files across concurrent worker slots
@@ -751,21 +748,21 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       for (let i = 0; i < files.length; i++) {
         const item = files[i];
         const fileId = `file_${i}_${Date.now()}`;
-        const actualSize = await getActualFileSize(item.file);
-        const hash = await calculateFileSHA256(item.file);
+        const { file: resolvedFile, size: actualSize } = await getResolvedFileAndSize(item.file);
+        const hash = await calculateFileSHA256(resolvedFile);
 
         preparedFiles.push({
           file_id: fileId,
-          filename: item.file.name,
-          relative_path: item.relativePath || item.file.name,
+          filename: resolvedFile.name,
+          relative_path: item.relativePath || resolvedFile.name,
           size: actualSize,
           sha256: hash,
         });
 
         fileMappings.push({
-          fileObj: item.file,
+          fileObj: resolvedFile,
           fileId: fileId,
-          relativePath: item.relativePath || item.file.name,
+          relativePath: item.relativePath || resolvedFile.name,
           sha256: hash,
           targetDeviceId: targetDevice.device_id,
         });

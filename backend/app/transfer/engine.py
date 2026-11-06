@@ -30,7 +30,7 @@ class HTTPChunkTransport(TransferTransport):
     async def write_chunk(self, file_path: str, offset: int, data: bytes) -> int:
         import anyio
         import os
-        mode = "r+b" if (offset > 0 and os.path.exists(file_path)) else "a+b" if offset > 0 else "w+b"
+        mode = "r+b" if os.path.exists(file_path) else "w+b"
         async with await anyio.open_file(file_path, mode) as f:
             await f.seek(offset)
             await f.write(data)

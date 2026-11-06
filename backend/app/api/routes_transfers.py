@@ -1,5 +1,6 @@
 import os
 import io
+import time
 import uuid
 import zipfile
 import logging
@@ -248,7 +249,12 @@ async def upload_chunk(
         raise HTTPException(status_code=413, detail="Chunk payload exceeds maximum allowed size (32MB)")
 
     session = transfer_manager.get_transfer(transfer_id)
-    file_obj = session.files.get(file_id) if session else None
+    if not session:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+
+    file_obj = session.files.get(file_id)
+    if not file_obj:
+        raise HTTPException(status_code=404, detail="File not found in transfer")
 
     if not body and not (file_obj and file_obj.size == 0):
         raise HTTPException(status_code=400, detail="Empty chunk payload")
@@ -294,17 +300,22 @@ async def upload_chunk(
     remaining_bytes = max(0, session.total_size - session.bytes_transferred) if session else 0
     eta = int(remaining_bytes / speed) if speed > 1024 else None
 
-    # Periodic/chunk progress event
-    await ws_manager.broadcast({
-        "type": "transfer_progress",
-        "transfer_id": transfer_id,
-        "file_id": file_id,
-        "bytes_transferred": session.bytes_transferred if session else 0,
-        "progress_percentage": round(session.progress_percentage, 1) if session else 0,
-        "speed_bps": round(speed, 1),
-        "eta_seconds": eta,
-        "status": session.status.value if session else "transferring"
-    })
+    # Throttled progress broadcast (at most once every 200ms or on completion) to eliminate event-loop congestion
+    now = time.time()
+    is_finished = (session and session.status == TransferState.COMPLETED) or (file_obj and file_obj.status == FileTransferState.COMPLETED)
+    if is_finished or (now - getattr(session, "last_progress_broadcast", 0.0) >= 0.20):
+        if session:
+            session.last_progress_broadcast = now
+        await ws_manager.broadcast({
+            "type": "transfer_progress",
+            "transfer_id": transfer_id,
+            "file_id": file_id,
+            "bytes_transferred": session.bytes_transferred if session else 0,
+            "progress_percentage": round(session.progress_percentage, 1) if session else 0,
+            "speed_bps": round(speed, 1),
+            "eta_seconds": eta,
+            "status": session.status.value if session else "transferring"
+        })
 
     if session and session.status == TransferState.COMPLETED:
         session.transport = "http"
