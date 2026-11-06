@@ -186,17 +186,26 @@ export const TransferCard: React.FC<TransferCardProps> = React.memo(({
             {transfer.progress_percentage}%
           </span>
           {isTransferring && (
-            <>
-              <span>•</span>
-              <span className="font-semibold text-brand-600 dark:text-brand-400">
-                {formatSpeed(transfer.speed_bps)}
-              </span>
-              <span>•</span>
-              <span className="flex items-center">
-                <Clock className="w-3 h-3 mr-1 shrink-0" />
-                {formatETA(transfer.eta_seconds)}
-              </span>
-            </>
+            transfer.bytes_transferred === 0 ? (
+              <>
+                <span>•</span>
+                <span className="font-semibold text-brand-600 dark:text-brand-400 animate-pulse">
+                  Connecting & starting stream...
+                </span>
+              </>
+            ) : (
+              <>
+                <span>•</span>
+                <span className="font-semibold text-brand-600 dark:text-brand-400">
+                  {formatSpeed(transfer.speed_bps)}
+                </span>
+                <span>•</span>
+                <span className="flex items-center">
+                  <Clock className="w-3 h-3 mr-1 shrink-0" />
+                  {formatETA(transfer.eta_seconds)}
+                </span>
+              </>
+            )
           )}
         </div>
 

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { TransferItem, DeviceInfo } from '../types';
 import { api } from '../services/api';
 import { wsClient } from '../services/websocket';
-import { calculateFileSHA256 } from '../utils/hashing';
+import { calculateFileSHA256, getActualFileSize } from '../utils/hashing';
 import { webrtcManager } from '../services/webrtc';
 import { getTransferConfig } from '../utils/transferSettings';
 import { SpeedCalculator } from '../utils/speed';
@@ -116,6 +116,11 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     const CONCURRENCY = Math.max(1, Math.min(files.length, engineConfig.concurrentTransfers));
     let hasUploadErrors = false;
 
+    const totalTransferSize = files.reduce((acc, f) => acc + f.fileObj.size, 0);
+    let totalUploadedBytes = 0;
+    const senderSpeedCalc = new SpeedCalculator(2.5);
+    let lastProgressTime = 0;
+
     // Upload single file sequentially in chunks
     const uploadSingleFile = async (item: { fileObj: File; fileId: string; relativePath: string }) => {
       if (ctrl.cancelled) return;
@@ -131,6 +136,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
         const serverFile = serverStatus.files.find((f) => f.file_id === item.fileId);
         if (serverFile && Array.isArray(serverFile.chunks_received) && serverFile.chunks_received.length > 0) {
           receivedChunks = new Set(serverFile.chunks_received);
+          totalUploadedBytes += serverFile.bytes_received || 0;
         } else if (serverFile && serverFile.bytes_received === 0) {
           receivedChunks = new Set();
         }
@@ -142,9 +148,23 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
         // Check cancellation
         if (ctrl.cancelled) break;
 
-        // Check pause state: loop wait
+        // Check pause state: loop wait with periodic server poll
+        let pausePollCount = 0;
         while (ctrl.paused && !ctrl.cancelled) {
-          await new Promise((r) => setTimeout(r, 200));
+          await new Promise((r) => setTimeout(r, 250));
+          pausePollCount++;
+          if (pausePollCount % 8 === 0) {
+            try {
+              const status = await api.getTransfer(transferId);
+              if (status.status === 'transferring') {
+                ctrl.paused = false;
+                break;
+              } else if (status.status === 'cancelled') {
+                ctrl.cancelled = true;
+                break;
+              }
+            } catch {}
+          }
         }
         if (ctrl.cancelled) break;
 
@@ -160,32 +180,73 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
 
         let chunkSuccess = false;
         let lastErrMsg = '';
+        const maxAttempts = 6;
 
-        for (let attempt = 1; attempt <= 3; attempt++) {
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           if (ctrl.cancelled) break;
 
-          // While paused, wait before uploading or retrying
           while (ctrl.paused && !ctrl.cancelled) {
-            await new Promise((r) => setTimeout(r, 200));
+            await new Promise((r) => setTimeout(r, 250));
+            pausePollCount++;
+            if (pausePollCount % 8 === 0) {
+              try {
+                const status = await api.getTransfer(transferId);
+                if (status.status === 'transferring') {
+                  ctrl.paused = false;
+                  break;
+                } else if (status.status === 'cancelled') {
+                  ctrl.cancelled = true;
+                  break;
+                }
+              } catch {}
+            }
           }
           if (ctrl.cancelled) break;
 
           try {
             await api.uploadChunk(transferId, item.fileId, chunkIdx, offset, chunkPayload);
             chunkSuccess = true;
+            totalUploadedBytes += chunkPayload.size;
+
+            // Live progress & speed update on sender side
+            const now = Date.now();
+            senderSpeedCalc.record(totalUploadedBytes, now);
+            if (now - lastProgressTime > 150 || totalUploadedBytes >= totalTransferSize) {
+              lastProgressTime = now;
+              const speed = Math.round(senderSpeedCalc.getSpeed());
+              const eta = senderSpeedCalc.getETA(totalTransferSize, totalUploadedBytes);
+              const pct = totalTransferSize > 0
+                ? Math.min(100, Math.round((totalUploadedBytes / totalTransferSize) * 100))
+                : 100;
+
+              setTransfers((prev) =>
+                prev.map((t) =>
+                  t.transfer_id === transferId
+                    ? {
+                        ...t,
+                        bytes_transferred: totalUploadedBytes,
+                        progress_percentage: pct,
+                        speed_bps: speed,
+                        eta_seconds: pct === 100 ? 0 : eta,
+                        status: pct === 100 ? 'completed' : 'transferring',
+                        transport: 'http',
+                      }
+                    : t
+                )
+              );
+            }
             break;
           } catch (err: any) {
             lastErrMsg = String(err?.message || '');
-            console.warn(`Chunk ${chunkIdx} upload failed (attempt ${attempt}/3):`, lastErrMsg);
+            console.warn(`Chunk ${chunkIdx} upload failed (attempt ${attempt}/${maxAttempts}):`, lastErrMsg);
             if (ctrl.cancelled) break;
 
-            // If the failure was due to pause or if pause was requested while request was in-flight
             if (ctrl.paused || lastErrMsg.toLowerCase().includes('paused')) {
               while (ctrl.paused && !ctrl.cancelled) {
-                await new Promise((r) => setTimeout(r, 200));
+                await new Promise((r) => setTimeout(r, 250));
               }
               if (ctrl.cancelled) break;
-              attempt = 0; // Reset retry budget so pause never exhausts retries
+              attempt = 0;
               continue;
             }
 
@@ -198,29 +259,31 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
               ctrl.cancelled = true;
               break;
             }
-            if (attempt < 3) {
-              await new Promise((r) => setTimeout(r, 1000 * attempt));
+            if (attempt < maxAttempts) {
+              await new Promise((r) => setTimeout(r, Math.min(4000, 1000 * Math.pow(1.4, attempt - 1))));
             }
           }
         }
 
         if (!chunkSuccess) {
           hasUploadErrors = true;
-          ctrl.cancelled = true;
+          // Auto-pause rather than permanently deleting the transfer!
+          ctrl.paused = true;
+          api.pauseTransfer(transferId).catch(() => {});
           const failureMessage =
             lastErrMsg.includes('507') ||
             lastErrMsg.includes('storage full') ||
             lastErrMsg.includes('disk full') ||
             lastErrMsg.includes('No space')
               ? 'Server storage limit reached on cloud container. For files > 500MB, use WebRTC or same Wi-Fi.'
-              : `Upload failed at chunk ${chunkIdx + 1} (${file.name}): connection interrupted`;
+              : `Connection paused at chunk ${chunkIdx + 1}/${totalChunks} (${file.name}). Tap Play/Resume to continue.`;
 
           setTransfers((prev) =>
             prev.map((t) =>
               t.transfer_id === transferId
                 ? {
                     ...t,
-                    status: 'failed',
+                    status: 'paused',
                     error_message: failureMessage,
                   }
                 : t
@@ -304,20 +367,21 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     const targetDeviceId = files[0].targetDeviceId;
 
     try {
-      // 1. Try WebRTC P2P DataChannel connection first (12s timeout for mobile/cross-network ICE gathering)
+      // 1. Try WebRTC P2P DataChannel connection first (2.5s fast timeout to prevent UI hang)
       let webrtcSuccess = false;
-      try {
-        const channel = await webrtcManager.connectToPeer(targetDeviceId, 12000);
-        if (channel && channel.readyState === 'open') {
-          const ctrl = activeControlRef.current.get(transferId) || { paused: false, cancelled: false };
-          if (ctrl.cancelled) {
-            return;
-          }
+      if (!webrtcManager.isWebRTCFailed(targetDeviceId)) {
+        try {
+          const channel = await webrtcManager.connectToPeer(targetDeviceId, 2500);
+          if (channel && channel.readyState === 'open') {
+            const ctrl = activeControlRef.current.get(transferId) || { paused: false, cancelled: false };
+            if (ctrl.cancelled) {
+              return;
+            }
 
-          webrtcSuccess = true;
-          setTransfers((prev) =>
-            prev.map((t) => (t.transfer_id === transferId ? { ...t, transport: 'webrtc', status: 'transferring' } : t))
-          );
+            webrtcSuccess = true;
+            setTransfers((prev) =>
+              prev.map((t) => (t.transfer_id === transferId ? { ...t, transport: 'webrtc', status: 'transferring' } : t))
+            );
 
           const engineConfig = getTransferConfig();
           const webrtcChunkSize = engineConfig.performanceMode ? 128 * 1024 : 64 * 1024;
@@ -400,6 +464,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       } catch (err) {
         console.log('[Transport] WebRTC P2P skipped or timed out, seamlessly using HTTP streaming');
       }
+    }
 
       // 2. Seamless Fallback: HTTP chunk streaming
       const ctrl = activeControlRef.current.get(transferId) || { paused: false, cancelled: false };
@@ -737,13 +802,14 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       for (let i = 0; i < files.length; i++) {
         const item = files[i];
         const fileId = `file_${i}_${Date.now()}`;
+        const actualSize = await getActualFileSize(item.file);
         const hash = await calculateFileSHA256(item.file);
 
         preparedFiles.push({
           file_id: fileId,
           filename: item.file.name,
           relative_path: item.relativePath || item.file.name,
-          size: item.file.size,
+          size: actualSize,
           sha256: hash,
         });
 
@@ -754,6 +820,12 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
           sha256: hash,
           targetDeviceId: targetDevice.device_id,
         });
+      }
+
+      // Verify that files are not 0 bytes
+      const totalDeclaredSize = preparedFiles.reduce((acc, f) => acc + f.size, 0);
+      if (totalDeclaredSize === 0 && files.length > 0) {
+        throw new Error('Selected file is 0 bytes (empty or cloud placeholder). If stored in Google Drive or iCloud, please download locally before sending.');
       }
 
       // 2. Request transfer session from backend

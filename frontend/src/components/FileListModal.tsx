@@ -82,6 +82,12 @@ export const FileListModal: React.FC<FileListModalProps> = ({
 
         {/* File preview list */}
         <div className="flex-1 overflow-y-auto py-3 sm:py-4 space-y-2 max-h-52 sm:max-h-60 pr-1">
+          {files.some((f) => f.file.size === 0) && (
+            <div className="flex items-start space-x-2 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs mb-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+              <span>A file reports 0 bytes. If this file is stored in Google Drive or iCloud, please download/save it to your local device storage first.</span>
+            </div>
+          )}
           {files.map((item, idx) => (
             <div
               key={idx}
@@ -93,7 +99,9 @@ export const FileListModal: React.FC<FileListModalProps> = ({
                   <p className="font-medium text-slate-900 dark:text-slate-100 truncate">
                     {item.relativePath || item.file.name}
                   </p>
-                  <p className="text-[11px] text-slate-500">{formatBytes(item.file.size)}</p>
+                  <p className={`text-[11px] ${item.file.size === 0 ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-slate-500'}`}>
+                    {item.file.size === 0 ? '0 B (Empty / Cloud file)' : formatBytes(item.file.size)}
+                  </p>
                 </div>
               </div>
               <button

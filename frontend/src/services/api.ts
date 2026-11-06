@@ -172,24 +172,31 @@ export const api = {
     fileId: string,
     chunkIndex: number,
     offset: number,
-    chunkBlob: Blob
-  ) =>
-    fetch(
+    chunkBlob: Blob,
+    timeoutMs = 35000
+  ) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    return fetch(
       `${BASE_URL}/api/transfers/${transferId}/files/${fileId}/chunks?chunk_index=${chunkIndex}&offset=${offset}`,
       {
         method: 'PUT',
         headers: { 'Content-Type': 'application/octet-stream' },
         body: chunkBlob,
+        signal: controller.signal,
       }
-    ).then((r) =>
-      handleResponse<{
-        status: string;
-        chunk_index: number;
-        bytes_received: number;
-        file_completed: boolean;
-        transfer_completed: boolean;
-      }>(r)
-    ),
+    )
+      .then((r) =>
+        handleResponse<{
+          status: string;
+          chunk_index: number;
+          bytes_received: number;
+          file_completed: boolean;
+          transfer_completed: boolean;
+        }>(r)
+      )
+      .finally(() => clearTimeout(timer));
+  },
 
   // History
   getHistory: (deviceId?: string) =>

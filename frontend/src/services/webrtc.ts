@@ -82,6 +82,19 @@ class WebRTCManager {
   private onProgressCallback: ((update: WebRTCProgressUpdate) => void) | null = null;
   private onFileReceivedCallback: WebRTCFileReceivedCallback | null = null;
   private iceServers: RTCIceServer[] = ICE_SERVERS;
+  private failedPeers: Set<string> = new Set();
+
+  public isWebRTCFailed(targetDeviceId: string): boolean {
+    return this.failedPeers.has(targetDeviceId);
+  }
+
+  public markWebRTCFailed(targetDeviceId: string): void {
+    this.failedPeers.add(targetDeviceId);
+  }
+
+  public resetWebRTCFailed(targetDeviceId: string): void {
+    this.failedPeers.delete(targetDeviceId);
+  }
 
   constructor() {
     this.setupSignalingListeners();
@@ -219,10 +232,14 @@ class WebRTCManager {
   }
 
   // Sender establishes connection and opens data channel
-  public async connectToPeer(targetDeviceId: string, timeoutMs = 12000): Promise<RTCDataChannel> {
+  public async connectToPeer(targetDeviceId: string, timeoutMs = 2500): Promise<RTCDataChannel> {
     const existingChannel = this.dataChannels.get(targetDeviceId);
     if (existingChannel && existingChannel.readyState === 'open') {
       return existingChannel;
+    }
+
+    if (this.isWebRTCFailed(targetDeviceId)) {
+      throw new Error('WebRTC previously timed out for this peer (using direct HTTP relay)');
     }
 
     const pc = this.getOrCreatePeerConnection(targetDeviceId);
@@ -240,6 +257,7 @@ class WebRTCManager {
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
+        this.markWebRTCFailed(targetDeviceId);
         reject(new Error('WebRTC connection timed out (falling back to HTTP)'));
       }, timeoutMs);
 
@@ -259,6 +277,7 @@ class WebRTCManager {
       const originalOnError = channel.onerror;
       channel.onerror = (ev) => {
         clearTimeout(timer);
+        this.markWebRTCFailed(targetDeviceId);
         if (originalOnError) originalOnError.call(channel, ev);
         reject(new Error('WebRTC channel error'));
       };
