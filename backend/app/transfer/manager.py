@@ -35,10 +35,15 @@ class SpeedCalculator:
         t_first, b_first = self.samples[0]
         t_last, b_last = self.samples[-1]
         dt = t_last - t_first
-        if dt <= 0:
+        # Require at least 0.3s of history to avoid aberrant spikes from near-instantaneous chunk writes
+        if dt < 0.3:
             return 0.0
         db = b_last - b_first
-        return max(0.0, db / dt)
+        if db <= 0:
+            return 0.0
+        calculated = db / dt
+        # Clamp speed to 500 MB/s to prevent UI estimation glitches on tiny dt intervals
+        return min(500 * 1024 * 1024.0, max(0.0, calculated))
 
 class TransferSession:
     def __init__(
@@ -254,6 +259,12 @@ class TransferManager:
                     if not f.final_filepath:
                         self._finalize_empty_file(session, f)
                     continue
+                # If file is currently verifying in a threadpool, wait briefly for completion
+                if f.status == FileTransferState.VERIFYING:
+                    for _ in range(50):
+                        if f.status == FileTransferState.COMPLETED or f.final_filepath:
+                            break
+                        await asyncio.sleep(0.1)
                 if not f.final_filepath or not os.path.exists(f.final_filepath):
                     # Check if temp file exists and has all bytes
                     if f.temp_filepath and os.path.exists(f.temp_filepath):

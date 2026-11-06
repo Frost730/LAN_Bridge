@@ -8,6 +8,49 @@ import { getTransferConfig } from '../utils/transferSettings';
 import { SpeedCalculator } from '../utils/speed';
 import { formatBytes } from '../utils/formatters';
 
+// Global upload limiter to prevent HTTP/1.1 socket exhaustion (browser 6-connection host limit)
+// and prevent parallel transfers from choking each other or hitting timeout aborts.
+class GlobalUploadLimiter {
+  private active = 0;
+  private maxActive = 4;
+  private waitQueue: Array<() => void> = [];
+
+  public async acquire(): Promise<() => void> {
+    if (this.active < this.maxActive) {
+      this.active++;
+      let released = false;
+      return () => {
+        if (!released) {
+          released = true;
+          this.release();
+        }
+      };
+    }
+    return new Promise((resolve) => {
+      this.waitQueue.push(() => {
+        this.active++;
+        let released = false;
+        resolve(() => {
+          if (!released) {
+            released = true;
+            this.release();
+          }
+        });
+      });
+    });
+  }
+
+  private release(): void {
+    this.active = Math.max(0, this.active - 1);
+    if (this.waitQueue.length > 0 && this.active < this.maxActive) {
+      const next = this.waitQueue.shift();
+      if (next) next();
+    }
+  }
+}
+
+const globalUploadLimiter = new GlobalUploadLimiter();
+
 export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: string, body?: string) => void) {
   const [transfers, setTransfers] = useState<TransferItem[]>([]);
   const [incomingTransfer, setIncomingTransfer] = useState<TransferItem | null>(null);
@@ -47,37 +90,57 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
   const refreshTransfers = useCallback(async () => {
     try {
       const list = await api.getTransfers(localDeviceId);
-      const sanitized = list.map((raw) => {
-        const t = normalizeTransfer(raw);
-        // If this device was the sender and transfer is marked transferring,
-        // and local files are in memory but streaming is not running, kickstart it!
-        if (
-          t.status === 'transferring' &&
-          t.sender_device_id === localDeviceId &&
-          !activeSendingTransfersRef.current.has(t.transfer_id) &&
-          localFilesRef.current.has(t.transfer_id)
-        ) {
-          const files = localFilesRef.current.get(t.transfer_id);
-          if (files && files.length > 0) {
-            executeTransferSendingRef.current(t.transfer_id, files);
-          }
-        }
+      setTransfers((prev) => {
+        return list.map((raw) => {
+          const incoming = normalizeTransfer(raw);
+          const existing = prev.find((p) => p.transfer_id === incoming.transfer_id);
 
-        // If this device was the sender and transfer is still marked transferring with 0 bytes,
-        // but local files are no longer in RAM (e.g. after a page reload), mark it cancelled.
-        if (
-          t.status === 'transferring' &&
-          t.bytes_transferred === 0 &&
-          t.sender_device_id === localDeviceId &&
-          !activeSendingTransfersRef.current.has(t.transfer_id) &&
-          !localFilesRef.current.has(t.transfer_id)
-        ) {
-          api.cancelTransfer(t.transfer_id).catch(() => {});
-          return { ...t, status: 'cancelled' as const, error_message: 'Session disconnected by page reload' };
-        }
-        return t;
+          // If this device was the sender and transfer is marked transferring,
+          // and local files are in memory but streaming is not running, kickstart it!
+          if (
+            incoming.status === 'transferring' &&
+            incoming.sender_device_id === localDeviceId &&
+            !activeSendingTransfersRef.current.has(incoming.transfer_id) &&
+            localFilesRef.current.has(incoming.transfer_id)
+          ) {
+            const files = localFilesRef.current.get(incoming.transfer_id);
+            if (files && files.length > 0) {
+              executeTransferSendingRef.current(incoming.transfer_id, files);
+            }
+          }
+
+          // If this device was the sender and transfer is still marked transferring with 0 bytes,
+          // but local files are no longer in RAM (e.g. after a page reload), mark it cancelled.
+          if (
+            incoming.status === 'transferring' &&
+            incoming.bytes_transferred === 0 &&
+            incoming.sender_device_id === localDeviceId &&
+            !activeSendingTransfersRef.current.has(incoming.transfer_id) &&
+            !localFilesRef.current.has(incoming.transfer_id)
+          ) {
+            api.cancelTransfer(incoming.transfer_id).catch(() => {});
+            return { ...incoming, status: 'cancelled' as const, error_message: 'Session disconnected by page reload' };
+          }
+
+          // Prevent race condition: never demote an already completed transfer back to transferring!
+          if (existing && existing.status === 'completed' && incoming.status !== 'completed') {
+            return existing;
+          }
+
+          // If incoming transfer has arrived with all bytes, treat as completed
+          if (incoming.total_size > 0 && incoming.bytes_transferred >= incoming.total_size) {
+            return {
+              ...incoming,
+              status: 'completed',
+              progress_percentage: 100,
+              speed_bps: 0,
+              eta_seconds: 0,
+            };
+          }
+
+          return incoming;
+        });
       });
-      setTransfers(sanitized);
     } catch {
       // Ignore
     }
@@ -175,7 +238,12 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
             }
             if (ctrl.cancelled || hasUploadErrors) break;
 
+            const releaseSlot = await globalUploadLimiter.acquire();
             try {
+              if (ctrl.cancelled || hasUploadErrors) {
+                releaseSlot();
+                break;
+              }
               await api.uploadChunk(transferId, item.fileId, chunkIdx, offset, chunkPayload);
               chunkSuccess = true;
               totalUploadedBytes += chunkPayload.size;
@@ -234,6 +302,8 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
               if (attempt < maxAttempts) {
                 await new Promise((r) => setTimeout(r, Math.min(4000, 1000 * Math.pow(1.4, attempt - 1))));
               }
+            } finally {
+              releaseSlot();
             }
           }
 
@@ -614,7 +684,13 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       setTransfers((prev) =>
         prev.map((t) => {
           if (t.transfer_id === data.transfer_id) {
-            const isFinished = data.status === 'completed' || data.progress_percentage >= 100;
+            // Never regress state if transfer was already completed on client
+            if (t.status === 'completed') return t;
+
+            const isFinished =
+              data.status === 'completed' ||
+              data.progress_percentage >= 100 ||
+              (t.total_size > 0 && data.bytes_transferred >= t.total_size);
             const speed = isFinished ? 0 : (data.speed_bps || 0);
             const remaining = isFinished ? 0 : Math.max(0, (t.total_size || 0) - data.bytes_transferred);
             const eta = isFinished
@@ -741,8 +817,6 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
           )
         );
       }
-
-      refreshTransfers();
 
       if (tid && !completedNotifiedTransfersRef.current.has(tid)) {
         completedNotifiedTransfersRef.current.add(tid);
