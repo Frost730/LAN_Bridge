@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   File,
   Folder,
@@ -12,9 +12,12 @@ import {
   ShieldCheck,
   RotateCcw,
   Trash2,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
 import { TransferItem } from '../types';
 import { formatBytes, formatSpeed, formatETA } from '../utils/formatters';
+import { webrtcReceivedFiles } from '../services/webrtc';
 
 interface TransferCardProps {
   transfer: TransferItem;
@@ -38,6 +41,29 @@ export const TransferCard: React.FC<TransferCardProps> = React.memo(({
   const isTransferring = transfer.status === 'transferring';
   const isVerifying = transfer.status === 'verifying';
   const isWaiting = transfer.status === 'waiting_for_acceptance' || transfer.status === 'queued';
+
+  const [showFileList, setShowFileList] = useState(false);
+  const [savedFileIds, setSavedFileIds] = useState<Set<string>>(new Set());
+
+  const markFileSaved = (id: string) => {
+    setSavedFileIds((prev) => new Set(prev).add(id));
+  };
+
+  const getFileDownloadUrl = (fileId?: string) => {
+    if (fileId) {
+      const webrtcFile = webrtcReceivedFiles.get(`${transfer.transfer_id}:${fileId}`);
+      if (webrtcFile) return webrtcFile.objectUrl;
+      return `/api/transfers/${transfer.transfer_id}/files/${fileId}/download`;
+    }
+    if (transfer.files?.[0]?.file_id) {
+      const webrtcFile = webrtcReceivedFiles.get(`${transfer.transfer_id}:${transfer.files[0].file_id}`);
+      if (webrtcFile) return webrtcFile.objectUrl;
+      return `/api/transfers/${transfer.transfer_id}/files/${transfer.files[0].file_id}/download`;
+    }
+    return `/api/transfers/${transfer.transfer_id}/download`;
+  };
+
+  const isMultiFile = transfer.is_folder || (transfer.files && transfer.files.length > 1);
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all">
@@ -95,7 +121,7 @@ export const TransferCard: React.FC<TransferCardProps> = React.memo(({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center space-x-1 shrink-0">
+        <div className="flex items-center space-x-1.5 shrink-0">
           {isTransferring && (
             <button
               onClick={() => onPause(transfer.transfer_id)}
@@ -132,21 +158,27 @@ export const TransferCard: React.FC<TransferCardProps> = React.memo(({
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                 <span>Sent</span>
               </span>
-            ) : (
+            ) : isMultiFile ? (
               <a
-                href={
-                  transfer.is_folder || (transfer.files && transfer.files.length > 1)
-                    ? `/api/transfers/${transfer.transfer_id}/download-zip`
-                    : transfer.files?.[0]?.file_id
-                    ? `/api/transfers/${transfer.transfer_id}/files/${transfer.files[0].file_id}/download`
-                    : `/api/transfers/${transfer.transfer_id}/download`
-                }
+                href={`/api/transfers/${transfer.transfer_id}/download-zip`}
                 download
-                className="flex items-center space-x-1 px-3 py-1.5 min-h-[36px] rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-400 text-xs font-semibold transition-colors border border-emerald-200 dark:border-emerald-800"
-                title="File saved to Downloads. Click to download again if needed."
+                onClick={() => markFileSaved('all_zip')}
+                className="flex items-center space-x-1.5 px-3 py-1.5 min-h-[36px] rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-sm transition-all select-none"
+                title="Save all files into a ZIP archive"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Download Again</span>
+                <span>{savedFileIds.has('all_zip') ? 'Save All Again' : 'Save All (ZIP)'}</span>
+              </a>
+            ) : (
+              <a
+                href={getFileDownloadUrl(transfer.files?.[0]?.file_id)}
+                download={transfer.files?.[0]?.filename || transfer.root_name || 'download'}
+                onClick={() => markFileSaved(transfer.files?.[0]?.file_id || 'main')}
+                className="flex items-center space-x-1.5 px-3.5 py-1.5 min-h-[36px] rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-sm transition-all select-none"
+                title="Save file to your device"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>{savedFileIds.has(transfer.files?.[0]?.file_id || 'main') ? 'Save Again' : 'Save'}</span>
               </a>
             )
           )}
@@ -214,7 +246,7 @@ export const TransferCard: React.FC<TransferCardProps> = React.memo(({
           {isCompleted && (
             <span className="inline-flex items-center text-emerald-600 dark:text-emerald-400 font-medium">
               <CheckCircle2 className="w-3.5 h-3.5 mr-1 shrink-0" />
-              {transfer.direction === 'sent' ? 'Delivered & Verified ✓' : 'Saved to Downloads ✓'}
+              {transfer.direction === 'sent' ? 'Delivered & Verified ✓' : 'Ready to Save ✓'}
             </span>
           )}
           {isVerifying && (
@@ -241,6 +273,64 @@ export const TransferCard: React.FC<TransferCardProps> = React.memo(({
           )}
         </div>
       </div>
+
+      {/* Expandable File List for Multi-File & Folder Transfers */}
+      {isMultiFile && (
+        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+              Files in this batch ({transfer.files.length})
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowFileList(!showFileList)}
+              className="flex items-center space-x-1 text-xs text-brand-600 dark:text-brand-400 hover:underline font-semibold"
+            >
+              <span>{showFileList ? 'Hide Individual Files' : 'Choose Which to Save'}</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showFileList ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
+
+          {showFileList && (
+            <div className="mt-2.5 space-y-1.5 max-h-52 overflow-y-auto pr-1">
+              {transfer.files.map((file) => {
+                const isThisSaved = savedFileIds.has(file.file_id);
+                const fileUrl = getFileDownloadUrl(file.file_id);
+                return (
+                  <div
+                    key={file.file_id}
+                    className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-xs"
+                  >
+                    <div className="flex items-center space-x-2 min-w-0 flex-1 mr-2">
+                      <File className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <div className="truncate">
+                        <p className="font-medium text-slate-800 dark:text-slate-200 truncate">{file.filename}</p>
+                        <p className="text-[10px] text-slate-400">{formatBytes(file.size)}</p>
+                      </div>
+                    </div>
+                    {isCompleted && transfer.direction === 'received' && (
+                      <a
+                        href={fileUrl}
+                        download={file.filename}
+                        onClick={() => markFileSaved(file.file_id)}
+                        className={`flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all shrink-0 ${
+                          isThisSaved
+                            ? 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
+                            : 'bg-brand-50 hover:bg-brand-100 dark:bg-brand-950/60 dark:hover:bg-brand-900/60 text-brand-600 dark:text-brand-400'
+                        }`}
+                        title={`Save ${file.filename} to your device`}
+                      >
+                        {isThisSaved ? <Check className="w-3 h-3 text-emerald-500" /> : <Download className="w-3 h-3" />}
+                        <span>{isThisSaved ? 'Saved' : 'Save'}</span>
+                      </a>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 });

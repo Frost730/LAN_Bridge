@@ -3,7 +3,7 @@ import { TransferItem, DeviceInfo } from '../types';
 import { api } from '../services/api';
 import { wsClient } from '../services/websocket';
 import { calculateFileSHA256, getActualFileSize } from '../utils/hashing';
-import { webrtcManager } from '../services/webrtc';
+import { webrtcManager, webrtcReceivedFiles } from '../services/webrtc';
 import { getTransferConfig } from '../utils/transferSettings';
 import { SpeedCalculator } from '../utils/speed';
 import { formatBytes } from '../utils/formatters';
@@ -36,42 +36,6 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
 
   // Set of file IDs received per transfer for WebRTC multi-file tracking
   const receivedFilesByTransferRef = useRef<Map<string, Set<string>>>(new Map());
-
-  // Set of transfer IDs that have already auto-downloaded on the receiver
-  const autoDownloadedTransfersRef = useRef<Set<string>>(new Set());
-
-  // Automatically trigger browser file download on receiver upon transfer completion
-  const triggerAutoDownload = useCallback((transfer: TransferItem) => {
-    if (!transfer || !transfer.transfer_id) return;
-    if (autoDownloadedTransfersRef.current.has(transfer.transfer_id)) return;
-    autoDownloadedTransfersRef.current.add(transfer.transfer_id);
-
-    try {
-      const downloadUrl =
-        transfer.is_folder || (transfer.files && transfer.files.length > 1)
-          ? `/api/transfers/${transfer.transfer_id}/download-zip`
-          : transfer.files?.[0]?.file_id
-          ? `/api/transfers/${transfer.transfer_id}/files/${transfer.files[0].file_id}/download`
-          : `/api/transfers/${transfer.transfer_id}/download`;
-
-      const safeName = transfer.root_name || transfer.files?.[0]?.filename || 'download';
-      const downloadFilename = transfer.is_folder && !safeName.endsWith('.zip') ? `${safeName}.zip` : safeName;
-
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = downloadFilename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } catch (e) {
-      console.warn('[AutoDownload] Failed to trigger auto-download:', e);
-    }
-  }, []);
-
-  const triggerAutoDownloadRef = useRef(triggerAutoDownload);
-  useEffect(() => {
-    triggerAutoDownloadRef.current = triggerAutoDownload;
-  }, [triggerAutoDownload]);
 
   // Always compute correct direction relative to current device
   const normalizeTransfer = useCallback((t: TransferItem): TransferItem => ({
@@ -520,15 +484,9 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
         );
       },
       (transfer_id, file_id, filename, relative_path, blob) => {
-        // Trigger browser save / download
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        // Store received file in memory so the user can choose when to save it
+        const objectUrl = URL.createObjectURL(blob);
+        webrtcReceivedFiles.set(`${transfer_id}:${file_id}`, { blob, filename, objectUrl });
 
         // Multi-file tracking: check if all files of the transfer have arrived
         let fileSet = receivedFilesByTransferRef.current.get(transfer_id);
@@ -697,15 +655,6 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
               : t
           )
         );
-      }
-
-      // If this device is the receiver and transfer was delivered via HTTP relay, auto-trigger browser download!
-      if (
-        completedItem &&
-        completedItem.receiver_device_id === localDeviceId &&
-        completedItem.transport !== 'webrtc'
-      ) {
-        triggerAutoDownloadRef.current(completedItem);
       }
 
       refreshTransfers();

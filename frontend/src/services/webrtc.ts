@@ -582,3 +582,11 @@ class WebRTCManager {
 }
 
 export const webrtcManager = new WebRTCManager();
+
+export interface WebRTCReceivedFile {
+  blob: Blob;
+  filename: string;
+  objectUrl: string;
+}
+
+export const webrtcReceivedFiles = new Map<string, WebRTCReceivedFile>();
