@@ -221,11 +221,11 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
         return;
       }
 
-      // Platform-adaptive chunk concurrency: 2 in-flight chunks on mobile (1 for multi-file), 3 on desktop
+      // Platform-adaptive chunk concurrency: 2 in-flight chunks on mobile, 3 on desktop
       const isMobile = engineConfig.isMobile;
       const CHUNK_CONCURRENCY = Math.max(
         1,
-        Math.min(isMobile ? (files.length === 1 ? 2 : 1) : (files.length === 1 ? 3 : 2), pendingIndices.length)
+        Math.min(isMobile ? 2 : 3, pendingIndices.length)
       );
       let nextChunkIdxPtr = 0;
 
@@ -474,7 +474,7 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
       const isLargeFile = overallTotalSize > 300 * 1024 * 1024;
       if (!isLargeFile && !webrtcManager.isWebRTCFailed(targetDeviceId)) {
         try {
-          const channel = await webrtcManager.connectToPeer(targetDeviceId, 5000);
+          const channel = await webrtcManager.connectToPeer(targetDeviceId, 2500);
           if (channel && channel.readyState === 'open') {
             const ctrl = activeControlRef.current.get(transferId) || { paused: false, cancelled: false };
             if (ctrl.cancelled) {

@@ -17,33 +17,44 @@ from .engine import HTTPChunkTransport
 logger = logging.getLogger(__name__)
 
 class SpeedCalculator:
-    def __init__(self, window_seconds: float = 3.0):
+    def __init__(self, window_seconds: float = 6.0):
         self.window_seconds = window_seconds
         # Deque of (timestamp, total_bytes)
         self.samples: deque[Tuple[float, int]] = deque()
+        self.last_positive_speed: float = 0.0
+        self.last_record_time: float = 0.0
 
     def record(self, total_bytes: int) -> None:
         now = time.time()
+        self.last_record_time = now
         self.samples.append((now, total_bytes))
         # Drop samples older than window
         while self.samples and (now - self.samples[0][0]) > self.window_seconds:
             self.samples.popleft()
 
     def get_speed(self) -> float:
-        if len(self.samples) < 2:
+        now = time.time()
+        # If no chunk received for > 5.0s, the transfer has truly paused or stopped
+        if self.last_record_time > 0 and (now - self.last_record_time) > 5.0:
+            self.last_positive_speed = 0.0
             return 0.0
-        t_first, b_first = self.samples[0]
-        t_last, b_last = self.samples[-1]
-        dt = t_last - t_first
-        # Require at least 0.3s of history to avoid aberrant spikes from near-instantaneous chunk writes
-        if dt < 0.3:
-            return 0.0
-        db = b_last - b_first
-        if db <= 0:
-            return 0.0
-        calculated = db / dt
-        # Clamp speed to 500 MB/s to prevent UI estimation glitches on tiny dt intervals
-        return min(500 * 1024 * 1024.0, max(0.0, calculated))
+
+        if len(self.samples) >= 2:
+            t_first, b_first = self.samples[0]
+            t_last, b_last = self.samples[-1]
+            dt = t_last - t_first
+            db = b_last - b_first
+            if dt >= 0.2 and db > 0:
+                calculated = db / dt
+                current = min(500 * 1024 * 1024.0, max(0.0, calculated))
+                if self.last_positive_speed > 0:
+                    # Exponential moving average (70% current, 30% historical) prevents wild flickering
+                    self.last_positive_speed = round(0.70 * current + 0.30 * self.last_positive_speed, 1)
+                else:
+                    self.last_positive_speed = round(current, 1)
+                return self.last_positive_speed
+
+        return self.last_positive_speed
 
 class TransferSession:
     def __init__(

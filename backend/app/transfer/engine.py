@@ -1,5 +1,19 @@
+import asyncio
+import os
 from abc import ABC, abstractmethod
 from typing import Optional, AsyncGenerator
+
+def _write_at_offset(file_path: str, offset: int, data: bytes) -> int:
+    mode = "r+b" if os.path.exists(file_path) else "w+b"
+    with open(file_path, mode) as f:
+        f.seek(offset)
+        f.write(data)
+    return len(data)
+
+def _read_at_offset(file_path: str, offset: int, length: int) -> bytes:
+    with open(file_path, "rb") as f:
+        f.seek(offset)
+        return f.read(length)
 
 class TransferTransport(ABC):
     """
@@ -28,16 +42,7 @@ class HTTPChunkTransport(TransferTransport):
         return "http_chunk"
 
     async def write_chunk(self, file_path: str, offset: int, data: bytes) -> int:
-        import anyio
-        import os
-        mode = "r+b" if os.path.exists(file_path) else "w+b"
-        async with await anyio.open_file(file_path, mode) as f:
-            await f.seek(offset)
-            await f.write(data)
-        return len(data)
+        return await asyncio.to_thread(_write_at_offset, file_path, offset, data)
 
     async def read_chunk(self, file_path: str, offset: int, length: int) -> bytes:
-        import anyio
-        async with await anyio.open_file(file_path, "rb") as f:
-            await f.seek(offset)
-            return await f.read(length)
+        return await asyncio.to_thread(_read_at_offset, file_path, offset, length)

@@ -82,14 +82,21 @@ class WebRTCManager {
   private onProgressCallback: ((update: WebRTCProgressUpdate) => void) | null = null;
   private onFileReceivedCallback: WebRTCFileReceivedCallback | null = null;
   private iceServers: RTCIceServer[] = ICE_SERVERS;
-  private failedPeers: Set<string> = new Set();
+  private failedPeers: Map<string, number> = new Map();
 
   public isWebRTCFailed(targetDeviceId: string): boolean {
-    return this.failedPeers.has(targetDeviceId);
+    const failedAt = this.failedPeers.get(targetDeviceId);
+    if (!failedAt) return false;
+    // Allow WebRTC to be re-attempted after 20s
+    if (Date.now() - failedAt > 20000) {
+      this.failedPeers.delete(targetDeviceId);
+      return false;
+    }
+    return true;
   }
 
   public markWebRTCFailed(targetDeviceId: string): void {
-    this.failedPeers.add(targetDeviceId);
+    this.failedPeers.set(targetDeviceId, Date.now());
   }
 
   public resetWebRTCFailed(targetDeviceId: string): void {
@@ -231,7 +238,7 @@ class WebRTCManager {
   }
 
   // Sender establishes connection and opens data channel
-  public async connectToPeer(targetDeviceId: string, timeoutMs = 5000): Promise<RTCDataChannel> {
+  public async connectToPeer(targetDeviceId: string, timeoutMs = 3000): Promise<RTCDataChannel> {
     const existingChannel = this.dataChannels.get(targetDeviceId);
     if (existingChannel && existingChannel.readyState === 'open') {
       return existingChannel;
