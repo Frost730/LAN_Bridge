@@ -511,14 +511,14 @@ async def download_transfer_zip(transfer_id: str, background_tasks: BackgroundTa
 
     # Clean up temporary zip and ephemeral files after download
     async def cleanup_zip_response(zip_path: Path, src_files: List[str]):
-        if await should_auto_delete():
-            for fp in src_files:
-                await delete_file_safely(fp, settings.AUTO_DELETE_DELAY_SECONDS)
         try:
             if zip_path.exists():
                 zip_path.unlink(missing_ok=True)
         except Exception:
             pass
+        if await should_auto_delete():
+            for fp in src_files:
+                await delete_file_safely(fp, settings.AUTO_DELETE_DELAY_SECONDS)
 
     background_tasks.add_task(cleanup_zip_response, temp_zip_file, files_to_delete)
 

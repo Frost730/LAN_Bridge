@@ -159,16 +159,45 @@ export const TransferCard: React.FC<TransferCardProps> = React.memo(({
                 <span>Sent</span>
               </span>
             ) : isMultiFile ? (
-              <a
-                href={`/api/transfers/${transfer.transfer_id}/download-zip`}
-                download
-                onClick={() => markFileSaved('all_zip')}
-                className="flex items-center space-x-1.5 px-3 py-1.5 min-h-[36px] rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-sm transition-all select-none"
-                title="Save all files into a ZIP archive"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>{savedFileIds.has('all_zip') ? 'Save All Again' : 'Save All (ZIP)'}</span>
-              </a>
+              transfer.transport === 'webrtc' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    markFileSaved('all_zip');
+                    // Sequentially download each WebRTC file using its objectUrl
+                    transfer.files.forEach((f, idx) => {
+                      const item = webrtcReceivedFiles.get(`${transfer.transfer_id}:${f.file_id}`);
+                      if (item?.objectUrl) {
+                        setTimeout(() => {
+                          const a = document.createElement('a');
+                          a.href = item.objectUrl;
+                          a.download = f.filename;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          markFileSaved(f.file_id);
+                        }, idx * 250);
+                      }
+                    });
+                  }}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 min-h-[36px] rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-sm transition-all select-none"
+                  title="Save all files to your device"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{savedFileIds.has('all_zip') ? 'Save All Again' : 'Save All'}</span>
+                </button>
+              ) : (
+                <a
+                  href={`/api/transfers/${transfer.transfer_id}/download-zip`}
+                  download
+                  onClick={() => markFileSaved('all_zip')}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 min-h-[36px] rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold shadow-sm transition-all select-none"
+                  title="Save all files into a ZIP archive"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{savedFileIds.has('all_zip') ? 'Save All Again' : 'Save All (ZIP)'}</span>
+                </a>
+              )
             ) : (
               <a
                 href={getFileDownloadUrl(transfer.files?.[0]?.file_id)}

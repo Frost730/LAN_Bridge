@@ -1090,6 +1090,17 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     }
     activeSendingTransfersRef.current.delete(transferId);
     localFilesRef.current.delete(transferId);
+    activeControlRef.current.delete(transferId);
+
+    // Free memory for any WebRTC blobs and object URLs associated with this transfer
+    for (const [key, value] of webrtcReceivedFiles.entries()) {
+      if (key.startsWith(`${transferId}:`)) {
+        try {
+          URL.revokeObjectURL(value.objectUrl);
+        } catch {}
+        webrtcReceivedFiles.delete(key);
+      }
+    }
 
     // 2. Immediate optimistic update in UI
     setTransfers((prev) =>
@@ -1118,6 +1129,16 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     activeSendingTransfersRef.current.delete(transferId);
     localFilesRef.current.delete(transferId);
     activeControlRef.current.delete(transferId);
+
+    // Free memory for any WebRTC blobs and object URLs associated with this transfer
+    for (const [key, value] of webrtcReceivedFiles.entries()) {
+      if (key.startsWith(`${transferId}:`)) {
+        try {
+          URL.revokeObjectURL(value.objectUrl);
+        } catch {}
+        webrtcReceivedFiles.delete(key);
+      }
+    }
 
     // 2. Immediate removal from UI
     setTransfers((prev) => prev.filter((t) => t.transfer_id !== transferId));

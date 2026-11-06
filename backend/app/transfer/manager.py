@@ -242,6 +242,7 @@ class TransferManager:
                 if (now - t.created_at) > max_age_seconds and t.bytes_transferred == 0:
                     t.status = TransferState.CANCELLED
                     t.error_message = "Transfer session expired or disconnected"
+                    self.cleanup_temp_files(t)
 
     async def complete_transfer(self, transfer_id: str, transport: str = "webrtc") -> bool:
         session = self.get_transfer(transfer_id)
