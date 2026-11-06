@@ -376,6 +376,13 @@ async def delete_file_safely(file_path: str, delay_seconds: int = 1800):
     except Exception as e:
         logger.warning(f"Could not auto-delete ephemeral file {file_path}: {e}")
 
+class LargeFileResponse(FileResponse):
+    """
+    Optimized FileResponse with 1MB chunk size to dramatically improve streaming
+    throughput and prevent reverse-proxy timeouts on large multi-gigabyte transfers.
+    """
+    chunk_size = 1024 * 1024
+
 async def should_auto_delete() -> bool:
     if settings.AUTO_DELETE_ON_DOWNLOAD:
         return True
@@ -397,9 +404,11 @@ async def download_file(
             safe_fname = sanitize_filename(matched["filename"])
             cand = (settings.RECEIVED_DIR / safe_fname).resolve()
             if cand.exists() and is_safe_subpath(cand, settings.RECEIVED_DIR):
+                if matched.get("size") and cand.stat().st_size < matched["size"]:
+                    raise HTTPException(status_code=409, detail="File on server is incomplete or truncated")
                 if await should_auto_delete():
                     background_tasks.add_task(delete_file_safely, str(cand), settings.AUTO_DELETE_DELAY_SECONDS)
-                return FileResponse(
+                return LargeFileResponse(
                     path=str(cand),
                     filename=safe_fname,
                     media_type="application/octet-stream"
@@ -425,8 +434,19 @@ async def download_file(
 
     if not file_obj.final_filepath or not os.path.exists(file_obj.final_filepath):
         cand = (settings.RECEIVED_DIR / sanitize_filename(file_obj.filename)).resolve()
-        if cand.exists() and is_safe_subpath(cand, settings.RECEIVED_DIR):
+        if cand.exists() and is_safe_subpath(cand, settings.RECEIVED_DIR) and cand.stat().st_size >= file_obj.size:
             file_obj.final_filepath = str(cand)
+        elif file_obj.temp_filepath and os.path.exists(file_obj.temp_filepath):
+            temp_sz = os.path.getsize(file_obj.temp_filepath)
+            if temp_sz >= file_obj.size:
+                verified, _ = await transfer_manager._verify_and_finalize_file(session, file_obj)
+                if not verified:
+                    raise HTTPException(status_code=409, detail="File failed verification on server")
+            else:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"File transfer incomplete on server ({temp_sz}/{file_obj.size} bytes received)"
+                )
         else:
             raise HTTPException(status_code=404, detail="File not ready or does not exist")
 
@@ -434,10 +454,17 @@ async def download_file(
     if not is_safe_subpath(filepath, settings.RECEIVED_DIR):
         raise HTTPException(status_code=403, detail="Access denied: invalid file path")
 
+    actual_size = os.path.getsize(filepath)
+    if file_obj.size > 0 and actual_size < file_obj.size:
+        raise HTTPException(
+            status_code=409,
+            detail=f"File transfer incomplete on server ({actual_size}/{file_obj.size} bytes received)"
+        )
+
     if await should_auto_delete():
         background_tasks.add_task(delete_file_safely, filepath, settings.AUTO_DELETE_DELAY_SECONDS)
 
-    return FileResponse(
+    return LargeFileResponse(
         path=filepath,
         filename=sanitize_filename(file_obj.filename),
         media_type="application/octet-stream"
@@ -491,7 +518,7 @@ async def download_transfer_zip(transfer_id: str, background_tasks: BackgroundTa
 
     background_tasks.add_task(cleanup_zip_response, temp_zip_file, files_to_delete)
 
-    return FileResponse(
+    return LargeFileResponse(
         path=str(temp_zip_file),
         filename=zip_filename,
         media_type="application/zip"

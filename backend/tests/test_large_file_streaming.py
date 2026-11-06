@@ -135,3 +135,49 @@ async def test_chunk_size_and_chunks_received_tracking(tmp_path, monkeypatch):
     assert f_dict["missing_chunks"] == []
     assert session.status == TransferState.COMPLETED
 
+@pytest.mark.asyncio
+async def test_truncated_file_rejection_and_verification(tmp_path, monkeypatch):
+    temp_dir = tmp_path / "temp3"
+    received_dir = tmp_path / "received3"
+    temp_dir.mkdir()
+    received_dir.mkdir()
+    monkeypatch.setattr(settings, "TEMP_DIR", temp_dir)
+    monkeypatch.setattr(settings, "RECEIVED_DIR", received_dir)
+    monkeypatch.setattr(db, "db_path", tmp_path / "trunc_test.db")
+    await db.init_db()
+
+    manager = TransferManager()
+
+    # Declare a 2.8MB file (~simulate 2.8GB file proportions)
+    total_size = 2800000
+    chunk_size = 1000000
+
+    session = manager.create_transfer(
+        transfer_id="trunc-test-1",
+        sender_device_id="sender",
+        sender_name="Sender",
+        receiver_device_id="receiver",
+        receiver_name="Receiver",
+        is_folder=False,
+        root_name="Combat_Mod.rar",
+        chunk_size=chunk_size,
+        files_data=[{
+            "file_id": "tf1",
+            "filename": "Combat_Mod.rar",
+            "relative_path": "Combat_Mod.rar",
+            "size": total_size,
+        }]
+    )
+    manager.accept_transfer("trunc-test-1")
+
+    # Send only 500KB (truncated ~500MB)
+    truncated_bytes = b"Z" * 500000
+    success, _ = await manager.write_chunk("trunc-test-1", "tf1", chunk_index=0, offset=0, data=truncated_bytes)
+    assert success is True
+
+    # Attempting to complete transfer with missing bytes MUST fail and reject
+    completed = await manager.complete_transfer("trunc-test-1", transport="http")
+    assert completed is False
+    assert session.status == TransferState.FAILED
+    assert "Incomplete transfer" in session.error_message or "missing" in session.error_message
+

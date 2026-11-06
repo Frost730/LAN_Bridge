@@ -272,6 +272,13 @@ class TransferManager:
                         session.status = TransferState.FAILED
                         session.error_message = "File payload missing on server or storage limit exceeded"
                         return False
+                else:
+                    # Final file exists, strictly verify it is not truncated
+                    actual_size = os.path.getsize(f.final_filepath)
+                    if actual_size < f.size:
+                        session.status = TransferState.FAILED
+                        session.error_message = f"Incomplete transfer: file on server has {actual_size}/{f.size} bytes"
+                        return False
 
         session.status = TransferState.COMPLETED
         session.completed_at = time.time()
@@ -405,6 +412,11 @@ class TransferManager:
         temp_path = Path(file_obj.temp_filepath)
         if not temp_path.exists():
             return False, "Temporary file missing"
+
+        # Strictly verify size to prevent truncated/partial files from finalizing
+        actual_size = temp_path.stat().st_size
+        if file_obj.size > 0 and actual_size < file_obj.size:
+            return False, f"Incomplete payload: received {actual_size}/{file_obj.size} bytes"
 
         # Streaming SHA-256 calculation if expected hash provided
         if file_obj.sha256_expected:

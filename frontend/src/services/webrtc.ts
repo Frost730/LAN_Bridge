@@ -378,8 +378,16 @@ class WebRTCManager {
       const blob = new Blob(validChunks);
       let verified = true;
 
+      // Strict integrity check: verify actual assembled byte size and chunk count
+      if (blob.size < fileData.size || fileData.chunks_received_count < fileData.total_chunks) {
+        console.error(
+          `[WebRTC] Incomplete/truncated file received for ${fileData.filename}: got ${blob.size} bytes (${fileData.chunks_received_count}/${fileData.total_chunks} chunks), expected ${fileData.size} bytes.`
+        );
+        verified = false;
+      }
+
       // Verify SHA-256 for files up to 200MB (avoids V8 RangeError when buffer exceeds 2GB)
-      if (fileData.sha256_expected && window.crypto && window.crypto.subtle) {
+      if (verified && fileData.sha256_expected && window.crypto && window.crypto.subtle) {
         try {
           if (blob.size <= 200 * 1024 * 1024) {
             const buffer = await blob.arrayBuffer();

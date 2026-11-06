@@ -284,26 +284,43 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     await Promise.all(workerPool);
 
     if (!ctrl.cancelled && !hasUploadErrors) {
-      // Optimistically update local state immediately so UI reaches 100% completed without waiting
-      setTransfers((prev) =>
-        prev.map((t) =>
-          t.transfer_id === transferId
-            ? {
-                ...t,
-                status: 'completed',
-                bytes_transferred: t.total_size > 0 ? t.total_size : t.bytes_transferred,
-                progress_percentage: 100,
-                speed_bps: 0,
-                eta_seconds: 0,
-              }
-            : t
-        )
-      );
+      // Strict verification: ensure total uploaded bytes match expected transfer size
+      if (totalTransferSize > 0 && totalUploadedBytes < totalTransferSize) {
+        console.warn(`[HTTP] Incomplete upload: uploaded ${totalUploadedBytes} of ${totalTransferSize} bytes.`);
+        setTransfers((prev) =>
+          prev.map((t) =>
+            t.transfer_id === transferId
+              ? {
+                  ...t,
+                  status: 'paused',
+                  error_message: `Transfer paused: uploaded ${formatBytes(totalUploadedBytes)} of ${formatBytes(totalTransferSize)}. Tap Play to resume.`,
+                }
+              : t
+          )
+        );
+        return;
+      }
 
       try {
         await api.completeTransfer(transferId, 'http');
         localFilesRef.current.delete(transferId);
         activeControlRef.current.delete(transferId);
+
+        // Only mark completed after backend confirms verification!
+        setTransfers((prev) =>
+          prev.map((t) =>
+            t.transfer_id === transferId
+              ? {
+                  ...t,
+                  status: 'completed',
+                  bytes_transferred: t.total_size > 0 ? t.total_size : t.bytes_transferred,
+                  progress_percentage: 100,
+                  speed_bps: 0,
+                  eta_seconds: 0,
+                }
+              : t
+          )
+        );
       } catch (e: any) {
         console.warn('[HTTP] Error completing transfer on backend:', e);
         setTransfers((prev) =>
@@ -340,11 +357,15 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
     }
 
     const targetDeviceId = files[0].targetDeviceId;
+    const overallTotalSize = files.reduce((acc, f) => acc + f.fileObj.size, 0);
 
     try {
       // 1. Try WebRTC P2P DataChannel connection first (2.5s fast timeout to prevent UI hang)
+      // For large files (>300MB), WebRTC in-memory chunk accumulation exhausts browser V8 heap limit.
+      // Automatically route multi-gigabyte files to direct HTTP chunk streaming!
       let webrtcSuccess = false;
-      if (!webrtcManager.isWebRTCFailed(targetDeviceId)) {
+      const isLargeFile = overallTotalSize > 300 * 1024 * 1024;
+      if (!isLargeFile && !webrtcManager.isWebRTCFailed(targetDeviceId)) {
         try {
           const channel = await webrtcManager.connectToPeer(targetDeviceId, 2500);
           if (channel && channel.readyState === 'open') {
@@ -494,7 +515,23 @@ export function useTransfers(localDevice: DeviceInfo, onNotification?: (title: s
           })
         );
       },
-      (transfer_id, file_id, filename, relative_path, blob) => {
+      (transfer_id, file_id, filename, relative_path, blob, verified) => {
+        if (!verified) {
+          console.error(`[WebRTC] Incomplete/truncated file received for transfer ${transfer_id} (${filename})`);
+          setTransfers((prev) =>
+            prev.map((t) =>
+              t.transfer_id === transfer_id
+                ? {
+                    ...t,
+                    status: 'failed',
+                    error_message: `Transfer incomplete: received truncated file (${formatBytes(blob.size)} of ${formatBytes(t.total_size)}). Try transferring via HTTP Relay.`,
+                  }
+                : t
+            )
+          );
+          return;
+        }
+
         // Store received file in memory so the user can choose when to save it
         const objectUrl = URL.createObjectURL(blob);
         webrtcReceivedFiles.set(`${transfer_id}:${file_id}`, { blob, filename, objectUrl });
