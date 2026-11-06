@@ -53,7 +53,7 @@ interface ReceivingFileEntry {
   relative_path: string;
   size: number;
   sha256_expected?: string;
-  chunks: Array<ArrayBuffer | null>;
+  chunks: Array<ArrayBuffer | Uint8Array | null>;
   chunks_received_count: number;
   bytes_received: number;
   total_chunks: number;
@@ -215,17 +215,17 @@ class WebRTCManager {
       console.error(`[WebRTC] DataChannel error with ${targetDeviceId}:`, err);
     };
 
-    channel.onmessage = async (event) => {
+    channel.onmessage = (event) => {
       if (typeof event.data === 'string') {
         // Control message (JSON)
         try {
           const msg = JSON.parse(event.data);
-          await this.handleControlMessage(targetDeviceId, msg);
+          void this.handleControlMessage(targetDeviceId, msg);
         } catch (e) {
           console.error('[WebRTC] Invalid control message:', e);
         }
       } else if (event.data instanceof ArrayBuffer) {
-        // Binary chunk: header [4 bytes chunk_idx][4 bytes offset] + payload
+        // High-speed synchronous binary chunk processing (avoids allocating promise per packet)
         this.handleBinaryChunk(targetDeviceId, event.data);
       }
     };
@@ -374,8 +374,8 @@ class WebRTCManager {
       this.receivingStreams.delete(fileData.stream_id);
 
       // Verify and assemble all received chunks in correct order
-      const validChunks = fileData.chunks.filter((c): c is ArrayBuffer => !!c);
-      const blob = new Blob(validChunks);
+      const validChunks = fileData.chunks.filter((c): c is ArrayBuffer | Uint8Array => !!c);
+      const blob = new Blob(validChunks as unknown as BlobPart[]);
       let verified = true;
 
       // Strict integrity check: verify actual assembled byte size and chunk count
@@ -424,7 +424,7 @@ class WebRTCManager {
       if (buffer.byteLength >= 8 && this.receivingFiles.size === 1) {
         const legacyView = new DataView(buffer);
         const chunkIdx = legacyView.getUint32(0);
-        const payload = buffer.slice(8);
+        const payload = new Uint8Array(buffer, 8);
         const legacyEntry = Array.from(this.receivingFiles.values())[0];
         if (legacyEntry && !legacyEntry.chunks[chunkIdx]) {
           legacyEntry.chunks[chunkIdx] = payload;
@@ -440,7 +440,8 @@ class WebRTCManager {
     const streamId = view.getUint32(0);
     const chunkIdx = view.getUint32(4);
     const offset = view.getUint32(8);
-    const payload = buffer.slice(12);
+    // Zero-copy Uint8Array view into received buffer (avoids multi-megabyte slice allocations)
+    const payload = new Uint8Array(buffer, 12);
 
     // Precise O(1) lookup of active file entry by stream_id
     let activeEntry = this.receivingStreams.get(streamId);
@@ -482,7 +483,7 @@ class WebRTCManager {
     }
   }
 
-  // Send a file across WebRTC data channel with flow control
+  // Send a file across WebRTC data channel with high-throughput event-driven flow control & pipelining
   public async sendFileOverDataChannel(
     channel: RTCDataChannel,
     transferId: string,
@@ -514,23 +515,63 @@ class WebRTCManager {
     );
 
     let bytesSent = 0;
-    const BUFFERED_AMOUNT_HIGH_THRESHOLD = 2 * 1024 * 1024; // 2MB flow control watermark
+    // High watermark (8MB) and low watermark (1MB) keeps SCTP socket saturated with zero stalling
+    const BUFFERED_AMOUNT_HIGH_THRESHOLD = 8 * 1024 * 1024;
+    const BUFFERED_AMOUNT_LOW_THRESHOLD = 1 * 1024 * 1024;
 
-    // Helper for backpressure / flow control
-    const waitForBufferDrain = async () => {
-      if (channel.bufferedAmount > BUFFERED_AMOUNT_HIGH_THRESHOLD) {
-        await new Promise<void>((resolve) => {
-          const check = () => {
-            if (channel.bufferedAmount <= 512 * 1024) {
-              resolve();
-            } else {
-              setTimeout(check, 25);
-            }
-          };
-          check();
-        });
+    try {
+      channel.bufferedAmountLowThreshold = BUFFERED_AMOUNT_LOW_THRESHOLD;
+    } catch {}
+
+    // Zero-latency event-driven backpressure wait using WebRTC onbufferedamountlow
+    const waitForBufferDrain = (): Promise<void> => {
+      if (channel.bufferedAmount <= BUFFERED_AMOUNT_HIGH_THRESHOLD) {
+        return Promise.resolve();
       }
+
+      return new Promise<void>((resolve) => {
+        let isResolved = false;
+
+        const cleanupAndResolve = () => {
+          if (!isResolved) {
+            isResolved = true;
+            channel.removeEventListener('bufferedamountlow', onLow);
+            if (fallbackTimer) clearTimeout(fallbackTimer);
+            resolve();
+          }
+        };
+
+        const onLow = () => {
+          cleanupAndResolve();
+        };
+
+        channel.addEventListener('bufferedamountlow', onLow, { once: true });
+
+        // Safety fallback timer in case browser event loop drops the event or channel closes
+        const fallbackTimer = setTimeout(() => {
+          if (channel.bufferedAmount <= BUFFERED_AMOUNT_LOW_THRESHOLD || channel.readyState !== 'open') {
+            cleanupAndResolve();
+          } else {
+            const interval = setInterval(() => {
+              if (channel.bufferedAmount <= BUFFERED_AMOUNT_LOW_THRESHOLD || channel.readyState !== 'open') {
+                clearInterval(interval);
+                cleanupAndResolve();
+              }
+            }, 10);
+          }
+        }, 80);
+      });
     };
+
+    // Pipelined chunk reader: read next chunk asynchronously while sending current chunk
+    const readChunkAsync = (idx: number): Promise<ArrayBuffer> => {
+      const offset = idx * chunkSize;
+      const end = Math.min(totalSize, offset + chunkSize);
+      return file.slice(offset, end).arrayBuffer();
+    };
+
+    // Prime the pipeline with chunk 0
+    let nextChunkPromise: Promise<ArrayBuffer> | null = totalChunks > 0 ? readChunkAsync(0) : null;
 
     for (let i = 0; i < totalChunks; i++) {
       // Check pause / cancel control
@@ -544,7 +585,7 @@ class WebRTCManager {
           return;
         }
         while (ctrl.paused && !ctrl.cancelled) {
-          await new Promise((r) => setTimeout(r, 200));
+          await new Promise((r) => setTimeout(r, 150));
         }
         if (ctrl.cancelled) {
           try {
@@ -554,14 +595,20 @@ class WebRTCManager {
         }
       }
 
-      const offset = i * chunkSize;
-      const end = Math.min(totalSize, offset + chunkSize);
-      const sliceBlob = file.slice(offset, end);
-      const chunkBuffer = await sliceBlob.arrayBuffer();
+      // Await pre-read chunk
+      const chunkBuffer = nextChunkPromise ? await nextChunkPromise : await readChunkAsync(i);
 
-      // Flow control wait if channel buffer is full
+      // Start prefetching chunk i + 1 immediately while we wait for buffer drain & network send
+      if (i + 1 < totalChunks) {
+        nextChunkPromise = readChunkAsync(i + 1);
+      } else {
+        nextChunkPromise = null;
+      }
+
+      // Flow control wait with zero-latency event-driven backpressure
       await waitForBufferDrain();
 
+      const offset = i * chunkSize;
       // Construct packet: 12-byte header [streamId (4)][chunk_idx (4)][offset (4)] + chunk data
       const packet = new Uint8Array(12 + chunkBuffer.byteLength);
       const view = new DataView(packet.buffer);
